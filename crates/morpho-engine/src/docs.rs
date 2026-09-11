@@ -1,6 +1,6 @@
 //! Pandoc bridge: markdown / html / txt / epub / docx / odt / rtf family.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 use tokio::process::Command;
@@ -52,7 +52,6 @@ pub async fn run(pandoc: &Path, args: &[String]) -> Result<()> {
         .kill_on_drop(true);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }

@@ -187,6 +187,15 @@ impl Format {
         )
     }
 
+    /// Formats the native `image` crate can ENCODE with meaningful quality.
+    /// (webp/avif encoding is routed through ffmpeg for real quality control.)
+    pub fn is_native_encode(self) -> bool {
+        matches!(
+            self,
+            Format::Png | Format::Jpg | Format::Gif | Format::Bmp | Format::Tiff | Format::Ico
+        )
+    }
+
     pub fn is_video(self) -> bool {
         matches!(
             self,

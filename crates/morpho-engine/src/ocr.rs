@@ -1,6 +1,6 @@
 //! Tesseract OCR bridge: image/pdf-adjacent raster -> txt.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 use tokio::process::Command;
@@ -27,7 +27,6 @@ pub async fn ocr(
         .kill_on_drop(true);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }

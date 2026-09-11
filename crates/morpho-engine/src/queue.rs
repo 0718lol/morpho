@@ -141,6 +141,11 @@ impl JobEngine {
             Error::Unsupported(src_format.to_string(), opts.target.to_string())
         })?;
 
+        // the chosen output directory may not exist yet
+        if let Some(dir) = &opts.output_dir {
+            std::fs::create_dir_all(dir)?;
+        }
+
         if token.is_cancelled() {
             return Err(Error::Cancelled);
         }

@@ -18,6 +18,7 @@ pub use queue::{JobEngine, JobEvent, JobOptions, MatrixEntry};
 
 #[cfg(test)]
 mod tests {
+    use crate::format::Format;
     use crate::format::Format::*;
     use crate::route::{plan, Pipeline};
 
@@ -27,20 +28,16 @@ mod tests {
 
     #[test]
     fn routes_native_images() {
-        assert_eq!(
-            pipelines(Png, Webp),
-            Some(vec![Pipeline::NativeImage])
-        );
+        assert_eq!(pipelines(Png, Webp), Some(vec![Pipeline::Ffmpeg]));
         assert_eq!(pipelines(Jpg, Ico), Some(vec![Pipeline::NativeImage]));
+        assert_eq!(pipelines(Webp, Png), Some(vec![Pipeline::NativeImage]));
     }
 
     #[test]
     fn routes_exotic_images_via_ffmpeg() {
         assert_eq!(pipelines(Avif, Png), Some(vec![Pipeline::Ffmpeg]));
-        assert_eq!(
-            pipelines(Heic, Webp),
-            Some(vec![Pipeline::Ffmpeg, Pipeline::NativeImage])
-        );
+        assert_eq!(pipelines(Heic, Webp), Some(vec![Pipeline::Ffmpeg]));
+        assert_eq!(pipelines(Heic, Jpg), Some(vec![Pipeline::Ffmpeg]));
     }
 
     #[test]

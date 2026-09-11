@@ -50,17 +50,19 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
     // ---------- from images ----------
     if src.category() == Category::Image && (src.is_native_image() || matches!(src, Avif | Heic)) {
         if dst.category() == Category::Image {
-            // avif/heic decode is not in the image crate -> decode via ffmpeg first
-            if src.is_native_image() && dst.is_native_image() {
-                return Some(Plan { steps: vec![s(Pipeline::NativeImage, dst)] });
-            }
-            if dst.is_native_image() {
+            // webp/avif targets always go through ffmpeg (real quality control);
+            // heic has no bundled encoder
+            if matches!(dst, Webp | Avif) {
                 return Some(Plan { steps: vec![s(Pipeline::Ffmpeg, dst)] });
             }
-            // avif<->heic etc: decode to png, then encode native
-            return Some(Plan {
-                steps: vec![s(Pipeline::Ffmpeg, Png), s(Pipeline::NativeImage, dst)],
-            });
+            if dst == Heic {
+                return None;
+            }
+            // avif/heic decode is not native -> let ffmpeg do decode + encode
+            if src == Webp || src.is_native_encode() {
+                return Some(Plan { steps: vec![s(Pipeline::NativeImage, dst)] });
+            }
+            return Some(Plan { steps: vec![s(Pipeline::Ffmpeg, dst)] });
         }
         if dst == Pdf {
             return Some(Plan { steps: vec![s(Pipeline::LibreOffice, Pdf)] });

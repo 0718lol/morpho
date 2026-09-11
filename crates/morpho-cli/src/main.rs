@@ -87,7 +87,7 @@ enum PdfOp {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
-    if let Err(e) = run(cli).await {
+    if let Err(e) = run(cli.command).await {
         eprintln!("error: {e}");
         std::process::exit(1);
     }
@@ -152,7 +152,7 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
                 Ok(())
             }
             None => {
-                for f in Format::all_in_order() {
+                for f in morpho_engine::format::all_in_order() {
                     let targets = route::targets_for(f);
                     let list: Vec<String> = targets.iter().map(|t| t.extension().to_string()).collect();
                     println!("{:>5} -> {}", f.extension(), list.join(", "));

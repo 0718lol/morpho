@@ -26,20 +26,27 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
     "resources": [
-      "engines/ffmpeg/*",
-      "engines/poppler/*",
-      "engines/pandoc/*",
-      "engines/qpdf/*",
-      "engines/tesseract/*",
-      "engines/tesseract/tessdata/*",
-      "engines/libreoffice/**"
+      "../engines/ffmpeg/*",
+      "../engines/poppler/*",
+      "../engines/pandoc/*",
+      "../engines/qpdf/*",
+      "../engines/tesseract/*",
+      "../engines/libreoffice/*"
     ],
     "windows": {
       "nsis": {
-        "languages": ["SimpChinese", "English"],
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
         "displayLanguageSelector": true,
         "installMode": "currentUser"
       }

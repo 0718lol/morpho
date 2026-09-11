@@ -4,7 +4,6 @@ use std::io::BufWriter;
 use std::path::Path;
 
 use image::codecs::jpeg::JpegEncoder;
-use image::codecs::webp::WebPQuality;
 use image::{DynamicImage, ImageFormat as ImFmt, ImageReader};
 
 use crate::error::{Error, Result};
@@ -14,7 +13,6 @@ fn im_format(f: Format) -> Option<ImFmt> {
     Some(match f {
         Format::Png => ImFmt::Png,
         Format::Jpg => ImFmt::Jpeg,
-        Format::Webp => ImFmt::WebP,
         Format::Gif => ImFmt::Gif,
         Format::Bmp => ImFmt::Bmp,
         Format::Tiff => ImFmt::Tiff,
@@ -39,13 +37,6 @@ pub fn convert(src: &Path, dst: &Path, target: Format, quality: Option<u8>) -> R
             let enc = JpegEncoder::new_with_quality(w, q);
             img.write_with_encoder(enc)?;
         }
-        Format::Webp => {
-            let file = std::fs::File::create(dst)?;
-            let w = BufWriter::new(file);
-            let q = quality.unwrap_or(85).clamp(1, 100);
-            let enc = image::codecs::webp::WebPEncoder::new_with_quality(w, WebPQuality::lossy(q));
-            img.write_with_encoder(enc)?;
-        }
         _ => {
             img.save_with_format(dst, fmt)?;
         }
@@ -55,7 +46,6 @@ pub fn convert(src: &Path, dst: &Path, target: Format, quality: Option<u8>) -> R
 
 fn flatten_on_white(img: DynamicImage) -> DynamicImage {
     if let image::ColorType::Rgba8 = img.color() {
-        let (w, h) = (img.width(), img.height());
         let mut rgba = img.into_rgba8();
         for px in rgba.pixels_mut() {
             let a = px[3] as u32;

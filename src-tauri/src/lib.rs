@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use morpho_engine::queue::{JobEngine, JobEvent, JobOptions, MatrixEntry};
 use morpho_engine::Format;
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Clone)]
 struct Settings {
     #[serde(default)]
     output_dir: Option<String>,
@@ -53,7 +53,7 @@ fn get_matrix() -> Vec<MatrixEntry> {
 
 #[tauri::command]
 fn get_formats() -> Vec<String> {
-    Format::all_in_order().iter().map(|f| f.extension().into()).collect()
+    morpho_engine::format::all_in_order().iter().map(|f| f.extension().into()).collect()
 }
 
 #[tauri::command]

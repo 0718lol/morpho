@@ -1,7 +1,6 @@
 //! Poppler bridge: pdf -> text / images. Qpdf bridge: merge / split / encrypt.
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 
 use tokio::process::Command;
 
@@ -11,8 +10,7 @@ use crate::format::Format;
 fn no_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     let _ = cmd;
@@ -87,7 +85,7 @@ pub async fn pdf_to_images(
     Ok(pages)
 }
 
-fn natural_page_key(p: &Path) -> u32 {
+fn natural_page_key(p: &PathBuf) -> u32 {
     p.file_stem()
         .and_then(|s| s.to_str())
         .and_then(|s| s.rsplit('-').next().and_then(|n| n.parse::<u32>().ok()))

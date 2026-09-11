@@ -4,7 +4,7 @@
 //! via `-progress pipe:1`, two-pass palette GIF for high quality, cooperative
 //! cancellation.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 
 use tokio::io::{AsyncBufReadExt, BufReader};

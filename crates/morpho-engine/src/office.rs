@@ -2,12 +2,15 @@
 //!
 //! One fresh user profile per invocation keeps runs isolated; a global async
 //! gate serializes instances so soffice never fights itself.
+//!
+//! NOTE: this bridge deliberately uses std::process inside spawn_blocking.
+//! tokio::process spawns hang LibreOffice's launcher restart chain on Windows,
+//! while plain std::process works reliably.
 
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use crate::error::{Error, Result};
@@ -31,58 +34,89 @@ impl LibreOffice {
         target: Format,
         out_dir: &Path,
     ) -> Result<Vec<PathBuf>> {
+        let soffice = self.soffice.clone();
+        let inputs: Vec<PathBuf> = inputs.iter().map(|p| absolutize(p)).collect();
+        let out_dir = absolutize(out_dir);
         let _gate = self.gate.lock().await;
-        let profile = tempfile::tempdir()?;
-        let profile_url = path_to_file_url(&profile.path().join("profile"));
+        let res = tokio::task::spawn_blocking(move || run_soffice(&soffice, &inputs, target, &out_dir))
+            .await
+            .map_err(|e| Error::Other(e.to_string()))?;
+        res
+    }
+}
 
-        let mut cmd = Command::new(&self.soffice);
-        cmd.args([
+fn run_soffice(
+    soffice: &Path,
+    inputs: &[PathBuf],
+    target: Format,
+    out_dir: &Path,
+) -> Result<Vec<PathBuf>> {
+    let profile = tempfile::tempdir()?;
+    let profile_url = path_to_file_url(&profile.path().join("profile"));
+
+    // stdout+stderr go to temp files (read on failure)
+    let err_path = profile.path().join("lo-output.log");
+    let err_file = std::fs::File::create(&err_path)?;
+    let out_file = std::fs::File::create(profile.path().join("lo-stdout.log"))?;
+
+    // CRITICAL: soffice runs with cwd = program dir, so relative paths would
+    // resolve against the wrong directory and LO hangs waiting on a file it
+    // cannot see. Callers absolutize inputs/out_dir (absolutize above).
+    let output = Command::new(soffice)
+        .args([
             "--headless",
             "--norestore",
             "--nolockcheck",
             "--nodefault",
             "--nologo",
-            "--nofirststartwizard",
         ])
         .arg(format!("-env:UserInstallation={profile_url}"))
-        .arg(format!("--convert-to={}", target.extension()))
-        .arg(format!("--outdir={}", out_dir.display()))
+        .arg("--convert-to")
+        .arg(target.extension())
+        // NOTE: space form — the console launcher rejects --outdir=<path>
+        .arg("--outdir")
+        .arg(out_dir)
         .args(inputs)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
+        .stdout(Stdio::from(out_file))
+        .stderr(Stdio::from(err_file))
+        .current_dir(soffice.parent().unwrap_or(Path::new(".")))
+        .output()?;
 
-        let output = cmd.output().await?;
-        let mut results = Vec::new();
-        for input in inputs {
-            let produced = out_dir
-                .join(input.file_stem().unwrap_or_default())
-                .with_extension(target.extension());
-            if produced.exists() {
-                results.push(produced);
-            }
+    let mut results = Vec::new();
+    for input in inputs {
+        let produced = out_dir
+            .join(input.file_stem().unwrap_or_default())
+            .with_extension(target.extension());
+        if produced.exists() {
+            results.push(produced);
         }
-        if results.is_empty() {
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            return Err(Error::ProcessFailed {
-                engine: "libreoffice".into(),
-                code: output.status.code().unwrap_or(-1),
-                stderr: if stderr.is_empty() { stdout } else { stderr },
-            });
-        }
-        Ok(results)
     }
+    if results.is_empty() {
+        let stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
+        let stdout = std::fs::read_to_string(profile.path().join("lo-stdout.log"))
+            .unwrap_or_default();
+        let log = if stderr.is_empty() { stdout } else { stderr };
+        return Err(Error::ProcessFailed {
+            engine: "libreoffice".into(),
+            code: output.status.code().unwrap_or(-1),
+            stderr: log,
+        });
+    }
+    Ok(results)
 }
 
 fn path_to_file_url(p: &Path) -> String {
     let s = p.to_string_lossy().replace('\\', "/");
     format!("file:///{s}")
+}
+
+fn absolutize(p: &Path) -> PathBuf {
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(p)
+    }
 }

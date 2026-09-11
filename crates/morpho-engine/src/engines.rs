@@ -85,8 +85,21 @@ impl Engines {
     }
 
     pub fn soffice(&self) -> Option<PathBuf> {
-        self.optional(&format!("libreoffice/program/{}", exe("soffice")))
-            .or_else(|| self.optional(&format!("libreoffice/program/{}", exe("soffice.bin"))))
+        // Prefer soffice.com (console subsystem): pipe-safe, emits progress.
+        // The GUI soffice.exe launcher can deadlock when spawned
+        // programmatically; soffice.com avoids that path entirely.
+        // NOTE: literal filenames — do not build them with exe().
+        #[cfg(windows)]
+        let names = ["soffice.com", "soffice.bin", "soffice.exe"];
+        #[cfg(not(windows))]
+        let names = ["soffice", "soffice.bin"];
+        for name in names {
+            let p = self.dir.join("libreoffice/program").join(name);
+            if p.is_file() {
+                return Some(p);
+            }
+        }
+        None
     }
 
     pub fn pdftoppm(&self) -> Option<PathBuf> {
