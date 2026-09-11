@@ -1,0 +1,15 @@
+[package]
+name = "morpho-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Morpho command line: batch conversions, format matrix, PDF tools"
+
+[[bin]]
+name = "morpho"
+path = "src/main.rs"
+
+[dependencies]
+morpho-engine = { path = "../morpho-engine" }
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }

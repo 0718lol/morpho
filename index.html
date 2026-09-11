@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Morpho — 万物皆可转</title>
+    <link rel="stylesheet" href="/src/styles/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <img src="/src/assets/logo.svg" alt="" class="brand-logo" />
+          <span class="brand-name">Morpho</span>
+          <span class="brand-tag" data-i18n="tagline">万物皆可转</span>
+        </div>
+        <div class="topbar-actions">
+          <div id="engine-status" class="engine-status" title="">
+            <span class="dot"></span><span class="engine-label" data-i18n="engines">引擎</span>
+          </div>
+          <button id="lang-toggle" class="ghost-btn" title="Language">EN</button>
+          <button id="theme-toggle" class="ghost-btn" title="Theme">🌓</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <section id="dropzone" class="dropzone" tabindex="0">
+          <div class="dropzone-inner">
+            <div class="drop-icon">🦋</div>
+            <div class="drop-title" data-i18n="dropTitle">拖拽文件到这里，或点击选择</div>
+            <div class="drop-sub" data-i18n="dropSub">图片 · 音视频 · 文档 · 表格 · 演示 · PDF — 全程本地处理，隐私不出机</div>
+          </div>
+          <input type="file" id="file-input" multiple hidden />
+        </section>
+
+        <section id="file-list" class="file-list hidden"></section>
+
+        <section id="convert-panel" class="convert-panel hidden">
+          <div class="panel-row">
+            <span class="panel-label" data-i18n="convertTo">转换为</span>
+            <div id="category-tabs" class="category-tabs"></div>
+          </div>
+          <div class="panel-row">
+            <span class="panel-label"></span>
+            <div id="format-pills" class="format-pills"></div>
+          </div>
+          <div class="panel-row" id="quality-row">
+            <span class="panel-label" data-i18n="quality">质量</span>
+            <div class="quality-wrap">
+              <input type="range" id="quality-slider" min="1" max="100" value="85" />
+              <span id="quality-value">85</span>
+              <select id="preset-select" class="preset-select hidden">
+                <option value="" data-i18n="presetDefault">默认</option>
+                <option value="wechat">微信 / 小体积</option>
+                <option value="web">网页 / 均衡</option>
+                <option value="archive">归档 / 高质量</option>
+              </select>
+            </div>
+          </div>
+          <div class="panel-row">
+            <span class="panel-label" data-i18n="output">输出</span>
+            <div class="output-wrap">
+              <span id="output-label" class="output-label" data-i18n="outputSame">与源文件相同目录</span>
+              <button id="pick-output" class="ghost-btn small" data-i18n="pickDir">选择目录</button>
+              <button id="clear-output" class="ghost-btn small hidden" data-i18n="reset">重置</button>
+            </div>
+          </div>
+          <button id="convert-btn" class="convert-btn">
+            <span data-i18n="convert">开始转换</span> (<span id="file-count">0</span>)
+          </button>
+        </section>
+
+        <section id="queue" class="queue hidden">
+          <h2 class="section-title" data-i18n="queue">转换队列</h2>
+          <div id="queue-list" class="queue-list"></div>
+        </section>
+
+        <section id="history" class="history hidden">
+          <h2 class="section-title">
+            <span data-i18n="history">最近转换</span>
+            <button id="clear-history" class="ghost-btn small" data-i18n="clear">清空</button>
+          </h2>
+          <div id="history-list" class="history-list"></div>
+        </section>
+      </main>
+
+      <footer class="statusbar">
+        <span id="status-text">🦋 Morpho v0.1.0</span>
+        <span class="status-right" data-i18n="localOnly">100% 离线 · MIT 开源</span>
+      </footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

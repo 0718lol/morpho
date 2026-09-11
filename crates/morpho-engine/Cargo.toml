@@ -1,0 +1,20 @@
+[package]
+name = "morpho-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Morpho core conversion engine: images, audio/video, documents, PDF, OCR"
+
+[dependencies]
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+image = { version = "0.25", default-features = true }
+lopdf = "0.36"
+
+[dev-dependencies]
+tempfile = "3"
