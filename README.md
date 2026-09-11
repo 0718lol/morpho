@@ -8,6 +8,8 @@
 
 </div>
 
+<img src="docs/screenshot.png" alt="Morpho 主界面" width="720"/>
+
 ---
 
 <a name="中文"></a>
