@@ -78,14 +78,14 @@ pub async fn pdf_to_images(
                     .unwrap_or(false)
         })
         .collect();
-    pages.sort_by_key(natural_page_key);
+    pages.sort_by_key(|p| natural_page_key(p.as_path()));
     if pages.is_empty() {
         return Err(Error::Other("poppler produced no pages".into()));
     }
     Ok(pages)
 }
 
-fn natural_page_key(p: &PathBuf) -> u32 {
+fn natural_page_key(p: &Path) -> u32 {
     p.file_stem()
         .and_then(|s| s.to_str())
         .and_then(|s| s.rsplit('-').next().and_then(|n| n.parse::<u32>().ok()))
@@ -134,7 +134,7 @@ pub async fn split(qpdf: &Path, src: &Path, out_dir: &Path, stem: &str) -> Resul
                 .unwrap_or(false)
         })
         .collect();
-    pages.sort_by_key(natural_page_key);
+    pages.sort_by_key(|p| natural_page_key(p.as_path()));
     Ok(pages)
 }
 

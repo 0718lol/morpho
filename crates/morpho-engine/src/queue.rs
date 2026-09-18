@@ -17,7 +17,8 @@ use crate::format::{Category, Format};
 use crate::ocr;
 use crate::office::LibreOffice;
 use crate::pdfs;
-use crate::route::{self, Pipeline};
+use crate::pdfword;
+use crate::route::{self, Pipeline, Step};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobOptions {
@@ -137,7 +138,7 @@ impl JobEngine {
                 Error::Other(format!("unknown input type: {}", source.display()))
             })?;
 
-        let plan = route::plan(src_format, opts.target).ok_or_else(|| {
+        let mut plan = route::plan(src_format, opts.target).ok_or_else(|| {
             Error::Unsupported(src_format.to_string(), opts.target.to_string())
         })?;
 
@@ -153,6 +154,38 @@ impl JobEngine {
 
         // two-stage plans run stage 1 into a temp dir, stage 2 to the final path
         let tmp = tempfile::tempdir()?;
+
+        // scanned-pdf detection: if the text layer is (near-)empty, reroute
+        // text-ish targets through per-page OCR instead of returning garbage
+        if src_format == Format::Pdf
+            && matches!(opts.target, Format::Txt | Format::Docx | Format::Md | Format::Html)
+        {
+            if let Some(pdftotext) = self.engines.pdftotext() {
+                let probe = tmp.path().join("probe.txt");
+                if pdfs::pdf_to_text(&pdftotext, source, &probe, false).await.is_ok() {
+                    let content = std::fs::read_to_string(&probe).unwrap_or_default();
+                    let chars = content.chars().filter(|c| !c.is_whitespace()).count();
+                    let pages = content.matches('\u{000C}').count().max(1);
+                    if chars < 16 * pages {
+                        plan.steps = match opts.target {
+                            Format::Txt => vec![Step {
+                                pipeline: Pipeline::OcrText,
+                                output: Format::Txt,
+                            }],
+                            other => vec![
+                                Step { pipeline: Pipeline::OcrText, output: Format::Txt },
+                                Step { pipeline: Pipeline::Pandoc, output: other },
+                            ],
+                        };
+                        self.emit(JobEvent::Progress {
+                            id,
+                            ratio: 0.0,
+                            note: "no text layer — using OCR".into(),
+                        });
+                    }
+                }
+            }
+        }
         let weights = step_weights(plan.steps.len());
         let mut current: PathBuf = source.to_path_buf();
         let mut done_weight = 0.0f32;
@@ -306,12 +339,102 @@ impl JobEngine {
                     .engines
                     .tessdata()
                     .ok_or_else(|| Error::EngineMissing("tessdata".into(), String::new()))?;
+                let langs = ocr::detect_langs(&tessdata);
                 report(0.2, "OCR");
-                ocr::ocr(&tesseract, &tessdata, src, dst, &ocr::detect_langs(&tessdata)).await?;
+                if target == Format::SearchablePdf {
+                    ocr::ocr_pdf(&tesseract, &tessdata, src, dst, &langs).await?;
+                } else {
+                    ocr::ocr(&tesseract, &tessdata, src, dst, &langs).await?;
+                }
+                report(1.0, "");
+            }
+            Pipeline::OcrPdf => {
+                // pdf -> searchable pdf: rasterize, OCR each page, merge
+                let tesseract = self
+                    .engines
+                    .tesseract()
+                    .ok_or_else(|| Error::EngineMissing("tesseract".into(), String::new()))?;
+                let tessdata = self
+                    .engines
+                    .tessdata()
+                    .ok_or_else(|| Error::EngineMissing("tessdata".into(), String::new()))?;
+                let pdftoppm = self
+                    .engines
+                    .pdftoppm()
+                    .ok_or_else(|| Error::EngineMissing("poppler".into(), String::new()))?;
+                let qpdf = self
+                    .engines
+                    .qpdf()
+                    .ok_or_else(|| Error::EngineMissing("qpdf".into(), String::new()))?;
+                let langs = ocr::detect_langs(&tessdata);
+                let pages_dir = tempfile::tempdir()?;
+                let pages =
+                    pdfs::pdf_to_images(&pdftoppm, src, pages_dir.path(), "page", Format::Png, 200)
+                        .await?;
+                let total = pages.len();
+                let mut parts = Vec::with_capacity(total);
+                for (i, page) in pages.iter().enumerate() {
+                    if token.is_cancelled() {
+                        return Err(Error::Cancelled);
+                    }
+                    let part = pages_dir.path().join(format!("ocr-{}.pdf", i + 1));
+                    ocr::ocr_pdf(&tesseract, &tessdata, page, &part, &langs).await?;
+                    parts.push(part);
+                    report(
+                        (i + 1) as f32 / total as f32,
+                        &format!("page {}/{}", i + 1, total),
+                    );
+                }
+                pdfs::merge(&qpdf, &parts, dst).await?;
+                report(1.0, "");
+            }
+            Pipeline::OcrText => {
+                // pdf -> txt via per-page OCR (scanned documents)
+                let tesseract = self
+                    .engines
+                    .tesseract()
+                    .ok_or_else(|| Error::EngineMissing("tesseract".into(), String::new()))?;
+                let tessdata = self
+                    .engines
+                    .tessdata()
+                    .ok_or_else(|| Error::EngineMissing("tessdata".into(), String::new()))?;
+                let pdftoppm = self
+                    .engines
+                    .pdftoppm()
+                    .ok_or_else(|| Error::EngineMissing("poppler".into(), String::new()))?;
+                let langs = ocr::detect_langs(&tessdata);
+                let pages_dir = tempfile::tempdir()?;
+                let pages =
+                    pdfs::pdf_to_images(&pdftoppm, src, pages_dir.path(), "page", Format::Png, 200)
+                        .await?;
+                let total = pages.len();
+                let mut text = String::new();
+                for (i, page) in pages.iter().enumerate() {
+                    if token.is_cancelled() {
+                        return Err(Error::Cancelled);
+                    }
+                    let page_text = ocr::ocr_to_string(&tesseract, &tessdata, page, &langs).await?;
+                    text.push_str(&page_text);
+                    if i + 1 < total {
+                        text.push('\u{000C}'); // page break, mirrors pdftotext
+                    }
+                    report(
+                        (i + 1) as f32 / total as f32,
+                        &format!("page {}/{}", i + 1, total),
+                    );
+                }
+                std::fs::write(dst, text)?;
                 report(1.0, "");
             }
             Pipeline::Qpdf => {
                 return Err(Error::Other("qpdf is command-only (merge/split/encrypt)".into()));
+            }
+            Pipeline::PdfWord => {
+                let pdftohtml = self
+                    .engines
+                    .pdftohtml()
+                    .ok_or_else(|| Error::EngineMissing("poppler".into(), String::new()))?;
+                pdfword::convert(&pdftohtml, src, dst, token, report).await?;
             }
             Pipeline::Copy => {
                 std::fs::copy(src, dst)?;

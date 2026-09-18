@@ -16,6 +16,8 @@ tracing = { workspace = true }
 image = { version = "0.25", default-features = true }
 tempfile = "3"
 lopdf = "0.36"
+docx-rs = "0.4.22"
+quick-xml = "0.42.0"
 
 [dev-dependencies]
 tempfile = "3"

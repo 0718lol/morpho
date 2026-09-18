@@ -224,7 +224,7 @@ function renderTargets() {
 
   for (const fmt of common.get(activeCategory)!) {
     const btn = document.createElement("button");
-    btn.textContent = fmt;
+    btn.textContent = pillLabel(fmt);
     btn.classList.toggle("active", fmt === selectedTarget);
     btn.addEventListener("click", () => {
       selectedTarget = fmt;
@@ -246,6 +246,12 @@ function updateQualityRow() {
 const isVideo = (fmt: string) => matrix.get(fmt)?.category === "video";
 const isAudioFmt = (fmt: string) => matrix.get(fmt)?.category === "audio";
 function videoOrAudio(fmt: string) { return isVideo(fmt) || isAudioFmt(fmt); }
+
+/** Wire names vs. human labels for special pseudo formats. */
+function pillLabel(fmt: string): string {
+  if (fmt === "searchablepdf") return t("searchablePdf");
+  return fmt;
+}
 
 /* ---------------- conversion ---------------- */
 

@@ -147,15 +147,15 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
             Some(src) => {
                 let f: Format = src.parse().map_err(|e: String| -> Box<dyn std::error::Error> { e.into() })?;
                 let targets = route::targets_for(f);
-                let list: Vec<String> = targets.iter().map(|t| t.extension().to_string()).collect();
+                let list: Vec<String> = targets.iter().map(|t| t.display_name().to_string()).collect();
                 println!("{src} -> {}", list.join(", "));
                 Ok(())
             }
             None => {
                 for f in morpho_engine::format::all_in_order() {
                     let targets = route::targets_for(f);
-                    let list: Vec<String> = targets.iter().map(|t| t.extension().to_string()).collect();
-                    println!("{:>5} -> {}", f.extension(), list.join(", "));
+                    let list: Vec<String> = targets.iter().map(|t| t.display_name().to_string()).collect();
+                    println!("{:>5} -> {}", f.display_name(), list.join(", "));
                 }
                 Ok(())
             }

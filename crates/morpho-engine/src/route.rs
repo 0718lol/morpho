@@ -17,8 +17,15 @@ pub enum Pipeline {
     Poppler,
     /// tesseract OCR
     Ocr,
+    /// pdf -> searchable pdf: rasterize pages, OCR each into a text-layer
+    /// pdf, merge (single step because pages fan out and recombine)
+    OcrPdf,
+    /// pdf -> txt via per-page OCR (scanned documents with no text layer)
+    OcrText,
     /// qpdf (merge/split/encrypt handled by dedicated commands, not routing)
     Qpdf,
+    /// self-developed PDF -> Word layout engine (pdftohtml + geometric re-flow)
+    PdfWord,
     /// plain file copy (text-ish formats with no transform)
     Copy,
 }
@@ -70,6 +77,16 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
         if dst == Txt && src.is_native_image() {
             return Some(Plan { steps: vec![s(Pipeline::Ocr, Txt)] });
         }
+        if dst == SearchablePdf && src.is_native_image() {
+            // tesseract reads the raster directly; one step, no re-encode
+            return Some(Plan { steps: vec![s(Pipeline::Ocr, SearchablePdf)] });
+        }
+        if dst == Docx && src.is_native_image() {
+            // editable Word from a scan: OCR text -> pandoc docx
+            return Some(Plan {
+                steps: vec![s(Pipeline::Ocr, Txt), s(Pipeline::Pandoc, Docx)],
+            });
+        }
         if dst.is_video() && (src == Gif || src.is_native_image()) {
             // gif/native image -> video (slideshow of a single image is odd but works)
             return Some(Plan { steps: vec![s(Pipeline::Ffmpeg, dst)] });
@@ -103,14 +120,31 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
         return None;
     }
 
-    // ---------- from pdf ----------
-    if src == Pdf {
+    // ---------- from pdf (SearchablePdf behaves like Pdf as a source) ----------
+    if matches!(src, Pdf | SearchablePdf) {
         match dst {
+            SearchablePdf => {
+                return Some(Plan { steps: vec![s(Pipeline::OcrPdf, SearchablePdf)] })
+            }
             Txt => return Some(Plan { steps: vec![s(Pipeline::Poppler, Txt)] }),
             Png | Jpg => return Some(Plan { steps: vec![s(Pipeline::Poppler, dst)] }),
-            Docx | Odt | Html | Rtf | Md => return Some(Plan {
-                steps: vec![s(Pipeline::Poppler, Txt), s(Pipeline::Pandoc, dst)],
-            }),
+            // layout-preserving word first; the docx then feeds odt/rtf/html/md
+            Docx => return Some(Plan { steps: vec![s(Pipeline::PdfWord, Docx)] }),
+            Odt | Rtf => {
+                return Some(Plan {
+                    steps: vec![s(Pipeline::PdfWord, Docx), s(Pipeline::LibreOffice, dst)],
+                })
+            }
+            Html => {
+                return Some(Plan {
+                    steps: vec![s(Pipeline::PdfWord, Docx), s(Pipeline::LibreOffice, Html)],
+                })
+            }
+            Md => {
+                return Some(Plan {
+                    steps: vec![s(Pipeline::PdfWord, Docx), s(Pipeline::Pandoc, Md)],
+                })
+            }
             _ => return None,
         }
     }

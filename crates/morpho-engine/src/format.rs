@@ -56,6 +56,10 @@ pub enum Format {
     Odp,
     // pdf
     Pdf,
+    /// Target-only pseudo format: a PDF that carries the original page image
+    /// plus an invisible OCR text layer. Real extension is `.pdf` — the
+    /// distinct variant exists so users can pick "searchable PDF" as a goal.
+    SearchablePdf,
 }
 
 impl Format {
@@ -103,6 +107,16 @@ impl Format {
             Format::Ppt => "ppt",
             Format::Odp => "odp",
             Format::Pdf => "pdf",
+            Format::SearchablePdf => "pdf",
+        }
+    }
+
+    /// Distinct user-facing name for CLI listings and `--to` parsing.
+    /// `SearchablePdf` needs one because its extension collides with `Pdf`.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Format::SearchablePdf => "spdf",
+            _ => self.extension(),
         }
     }
 
@@ -151,6 +165,7 @@ impl Format {
             "ppt" | "dps" => Format::Ppt,
             "odp" => Format::Odp,
             "pdf" => Format::Pdf,
+            "spdf" | "searchable-pdf" | "searchablepdf" => Format::SearchablePdf,
             _ => return None,
         })
     }
@@ -169,7 +184,7 @@ impl Format {
             Rtf | Docx | Doc | Odt | Epub => Category::Document,
             Xlsx | Xls | Ods => Category::Sheet,
             Pptx | Ppt | Odp => Category::Slide,
-            Pdf => Category::Pdf,
+            Pdf | SearchablePdf => Category::Pdf,
         }
     }
 
@@ -272,7 +287,7 @@ pub fn formats_in_category(cat: Category) -> Vec<Format> {
         Category::Document => vec![Docx, Doc, Odt, Rtf, Epub],
         Category::Sheet => vec![Xlsx, Xls, Ods],
         Category::Slide => vec![Pptx, Ppt, Odp],
-        Category::Pdf => vec![Pdf],
+        Category::Pdf => vec![Pdf, SearchablePdf],
     }
 }
 

@@ -9,6 +9,7 @@ pub mod image;
 pub mod ocr;
 pub mod office;
 pub mod pdfs;
+pub mod pdfword;
 pub mod queue;
 pub mod route;
 
@@ -66,9 +67,32 @@ mod tests {
     fn routes_pdf() {
         assert_eq!(pipelines(Pdf, Txt), Some(vec![Pipeline::Poppler]));
         assert_eq!(pipelines(Pdf, Png), Some(vec![Pipeline::Poppler]));
+        assert_eq!(pipelines(Pdf, Docx), Some(vec![Pipeline::PdfWord]));
         assert_eq!(
-            pipelines(Pdf, Docx),
-            Some(vec![Pipeline::Poppler, Pipeline::Pandoc])
+            pipelines(Pdf, Odt),
+            Some(vec![Pipeline::PdfWord, Pipeline::LibreOffice])
+        );
+        assert_eq!(
+            pipelines(Pdf, Md),
+            Some(vec![Pipeline::PdfWord, Pipeline::Pandoc])
+        );
+    }
+
+    #[test]
+    fn routes_searchable_pdf() {
+        // searchable pdf as a target
+        assert_eq!(pipelines(Png, SearchablePdf), Some(vec![Pipeline::Ocr]));
+        assert_eq!(pipelines(Pdf, SearchablePdf), Some(vec![Pipeline::OcrPdf]));
+        // behaves like a pdf as a source
+        assert_eq!(
+            pipelines(SearchablePdf, Txt),
+            Some(vec![Pipeline::Poppler])
+        );
+        assert_eq!(pipelines(SearchablePdf, SearchablePdf), None);
+        // scans -> editable word
+        assert_eq!(
+            pipelines(Png, Docx),
+            Some(vec![Pipeline::Ocr, Pipeline::Pandoc])
         );
     }
 
@@ -81,13 +105,17 @@ mod tests {
 
     #[test]
     fn extension_roundtrip() {
-        for f in crate::format::Category::all()
-            .iter()
-            .flat_map(|c| crate::format::formats_in_category(*c))
-        {
+        for f in crate::format::all_in_order() {
+            // SearchablePdf is target-only and shares the .pdf extension
+            if f == SearchablePdf {
+                continue;
+            }
             let ext = f.extension();
             assert_eq!(Format::from_extension(ext), Some(f), "roundtrip {ext}");
         }
+        assert_eq!(Format::from_extension("pdf"), Some(Pdf));
+        assert_eq!(Format::from_extension("spdf"), Some(SearchablePdf));
+        assert_eq!(SearchablePdf.extension(), "pdf");
         assert_eq!(Format::from_extension("jpeg"), Some(Jpg));
         assert_eq!(Format::from_extension("yml"), Some(Yaml));
         assert_eq!(Format::from_extension("heif"), Some(Heic));

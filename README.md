@@ -35,8 +35,8 @@
 | 文档 | doc docx odt rtf txt md html epub | pdf docx odt rtf html md epub txt |
 | 表格 | xlsx xls ods csv | xlsx csv pdf ods html |
 | 演示 | pptx ppt odp | pdf |
-| PDF | pdf | txt(可保留版面) · png/jpg(逐页) · docx/html/md(文字链路) · 合并 · 拆分 · AES-256 加解密 |
-| OCR | 图片扫描件 | txt（eng + chi_sim） |
+| PDF | pdf | **docx/odt/rtf/html（版式还原引擎）** · md · txt(可保留版面) · png/jpg(逐页) · 合并 · 拆分 · AES-256 加解密 |
+| OCR | 图片 · 扫描件 | **可搜索 PDF（隐藏文字层）** · **docx（扫描件自动 OCR 兜底）** · txt（eng + chi_sim） |
 
 命令行查看实时矩阵：`morpho formats`（逐格式列出全部可行目标）。
 
@@ -53,6 +53,8 @@
 morpho convert *.png --to webp              # 批量图片
 morpho convert clip.mov --to mp4 --preset web   # 视频压缩预设: wechat | web | archive
 morpho convert report.docx --to pdf --out ~/docs
+morpho convert scan.pdf --to spdf           # 扫描件 -> 可搜索 PDF（逐页 OCR）
+morpho convert paper.pdf --to docx          # PDF -> Word 版式还原
 morpho formats docx                          # 查询 docx 能转什么
 morpho engines                               # 检查引擎状态
 morpho pdf merge a.pdf b.pdf -o merged.pdf   # PDF 工具
@@ -78,7 +80,8 @@ crates/morpho-engine   纯 Rust 转换引擎（GUI 与 CLI 共用）
   ├─ 音视频管线        FFmpeg sidecar，-progress 实时进度，两遍 GIF 调色板
   ├─ 文档管线          LibreOffice headless（独立 profile 隔离）
   ├─ PDF 管线          Poppler + qpdf
-  ├─ OCR 管线          Tesseract（eng+chi_sim）
+  ├─ PDF→Word          自研版式还原：pdftohtml 坐标提取 → 几何重排 → docx
+  ├─ OCR 管线          Tesseract（eng+chi_sim，可搜索 PDF / 扫描件自动兜底）
   └─ 队列              tokio 并行 + 信号量并发上限 + 广播事件 + 协作取消
 crates/morpho-cli      命令行入口
 src/                   Tauri 2 前端（Vite + TypeScript，零框架）
@@ -88,8 +91,9 @@ scripts/               引擎获取 / 图标生成
 
 ## Roadmap
 
+- [x] PDF → Word 版式还原引擎（自研：pdftohtml 几何重排 → docx）
 - [ ] 相机 RAW 解码（cr2/cr3/nef/arw/dng）
-- [ ] PDF → Word 版式还原引擎
+- [ ] PDF → Word：表格精细版式与多栏阅读顺序
 - [ ] 视频 → 图片序列帧 / 图片 → 幻灯片视频
 - [ ] 自动更新器 + 代码签名
 - [ ] macOS / Linux 官方包

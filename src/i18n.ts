@@ -42,6 +42,7 @@ const dict: Record<Lang, Record<string, string>> = {
     catSheet: "表格",
     catSlide: "演示",
     catPdf: "PDF",
+    searchablePdf: "可搜索 PDF",
     sameFormat: "与源格式相同",
   },
   en: {
@@ -85,6 +86,7 @@ const dict: Record<Lang, Record<string, string>> = {
     catSheet: "Sheets",
     catSlide: "Slides",
     catPdf: "PDF",
+    searchablePdf: "Searchable PDF",
     sameFormat: "same as source",
   },
 };

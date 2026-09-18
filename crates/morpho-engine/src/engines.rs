@@ -110,6 +110,10 @@ impl Engines {
         self.optional(&format!("poppler/{}", exe("pdftotext")))
     }
 
+    pub fn pdftohtml(&self) -> Option<PathBuf> {
+        self.optional(&format!("poppler/{}", exe("pdftohtml")))
+    }
+
     pub fn tesseract(&self) -> Option<PathBuf> {
         self.optional(&format!("tesseract/{}", exe("tesseract")))
     }
@@ -132,7 +136,11 @@ impl Engines {
         vec![
             ("ffmpeg".into(), self.ffmpeg().is_ok()),
             ("libreoffice".into(), self.soffice().is_some()),
-            ("poppler".into(), self.pdftoppm().is_some() && self.pdftotext().is_some()),
+            ("poppler".into(), {
+                self.pdftoppm().is_some()
+                    && self.pdftotext().is_some()
+                    && self.pdftohtml().is_some()
+            }),
             ("tesseract".into(), self.tesseract().is_some()),
             ("pandoc".into(), self.pandoc().is_some()),
             ("qpdf".into(), self.qpdf().is_some()),
