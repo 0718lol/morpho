@@ -87,21 +87,27 @@ def unzip(src: Path, dest: Path):
         zf.extractall(dest)
 
 
+SEVENZIP_MSI_URL = "https://github.com/ip7z/7zip/releases/download/26.03/7z2603-x64.msi"
+
+
 def ensure_7z() -> Path:
-    """Bootstrap a full 7-Zip console: 7zr.exe extracts the extra pack with 7z.exe."""
-    tools = CACHE / "7z"
-    exe = tools / "7z.exe"
-    if exe.exists():
-        return exe
-    tools.mkdir(parents=True, exist_ok=True)
-    sevenzr = tools / "7zr.exe"
-    download("https://www.7-zip.org/a/7zr.exe", sevenzr)
-    extra = download("https://www.7-zip.org/a/7z2501-extra.7z", tools / "extra.7z")
-    subprocess.run([str(sevenzr), "x", str(extra), f"-o{tools}", "-y"], check=True,
-                   stdout=subprocess.DEVNULL)
-    if not exe.exists():
-        raise FileNotFoundError("7z.exe not produced")
-    return exe
+    """Full 7-Zip console (7z.exe + 7z.dll) laid out via `msiexec /a`.
+
+    7z.dll decodes Inno Setup archives (needed for tesseract); the 7zr.exe /
+    extra pack from 7-zip.org does not. msiexec /a only lays files on disk —
+    no install, no elevation, so it works on unattended CI runners.
+    """
+    root = CACHE / "7zip"
+    hits = list(root.rglob("7z.exe")) if root.exists() else []
+    if hits:
+        return hits[0]
+    msi = download(SEVENZIP_MSI_URL, CACHE / "7zip.msi")
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["msiexec", "/a", str(msi), "/qn", f"TARGETDIR={root}"], check=True)
+    hits = list(root.rglob("7z.exe"))
+    if not hits:
+        raise FileNotFoundError("7z.exe not produced by msiexec /a")
+    return hits[0]
 
 
 def fetch_ffmpeg():
@@ -161,33 +167,22 @@ def fetch_tesseract():
         return print("[skip] tesseract")
     installer = download(TESSERACT_URL, CACHE / "tesseract-installer.exe")
     out.mkdir(parents=True, exist_ok=True)
-    target = out.resolve()
-    # The UB-Mannheim build is Inno Setup with a requireAdministrator manifest:
-    # elevated silent install, then fall back to any pre-existing installation.
-    ps = (f"Start-Process -FilePath '{installer.resolve()}' "
-          f"-ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR={target}' "
-          f"-Verb RunAs -Wait")
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps],
-                   timeout=900, capture_output=True)
-    candidates = [target,
-                  Path("C:/Program Files/Tesseract-OCR"),
-                  Path("C:/Program Files (x86)/Tesseract-OCR")]
-    src = next((c for c in candidates if (c / "tesseract.exe").exists()), None)
-    if src is not None and src != target:
-        shutil.copytree(src, out, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("$PLUGINSDIR", "uninstall.exe"))
+    # Extract, never install: the UB-Mannheim build is Inno Setup whose
+    # silent install hangs on unattended CI (UAC elevation waits forever),
+    # so we unpack the installer's payload with 7-Zip instead of running it.
+    sevenz = ensure_7z()
+    subprocess.run([str(sevenz), "x", str(installer), f"-o{out}", "-y"],
+                   check=True, stdout=subprocess.DEVNULL)
+    shutil.rmtree(out / "$PLUGINSDIR", ignore_errors=True)
     if not (out / "tesseract.exe").exists():
-        raise RuntimeError("tesseract.exe missing after install")
-    if (out / "tesseract.exe").exists():
-        print("[done] tesseract")
-    else:
-        raise RuntimeError("tesseract.exe still missing")
+        raise RuntimeError("tesseract.exe missing after extraction")
+    print("[done] tesseract")
     # Chinese OCR data (UB-Mannheim default install ships eng+osd only)
     tessdata = out / "tessdata"
     if not (tessdata / "chi_sim.traineddata").exists():
         download("https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata",
                  tessdata / "chi_sim.traineddata")
-    # trim training tools & docs we never use (keeps the bundle lean)
+    # trim training tools, uninstaller & docs we never use (keeps the bundle lean)
     for f in out.iterdir():
         if f.is_file() and f.suffix.lower() == ".exe" and f.stem != "tesseract":
             f.unlink()
