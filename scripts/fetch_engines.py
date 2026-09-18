@@ -73,9 +73,15 @@ def download(url: str, dest: Path) -> Path:
                 if total:
                     print(f"\r       {done/1e6:7.1f}/{total/1e6:.1f} MB", end="", flush=True)
         print()
+        # a silent connection drop looks like a clean EOF: refuse to cache
+        # a truncated download (Content-Length missing only on chunked repos)
+        if total and done != total:
+            part.unlink(missing_ok=True)
+            raise IOError(f"truncated download: {done}/{total} bytes")
         part.rename(dest)
         return dest
     except Exception as e:
+        part.unlink(missing_ok=True)
         print(f"[warn] urllib failed ({e}); retrying with curl")
         if _curl_download(url, dest):
             return dest
@@ -220,8 +226,13 @@ def fetch_qpdf():
     out = ENGINES / "qpdf"
     if (out / "qpdf.exe").exists():
         return print("[skip] qpdf")
+    headers = {"User-Agent": "morpho-fetch/0.1"}
+    # GitHub's unauthenticated API rate limit is tiny; CI/local often has a token
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request("https://api.github.com/repos/qpdf/qpdf/releases/latest",
-                                 headers={"User-Agent": "morpho-fetch/0.1"})
+                                 headers=headers)
     with urllib.request.urlopen(req) as resp:
         release = json.load(resp)
     assets = [a["browser_download_url"] for a in release["assets"]
