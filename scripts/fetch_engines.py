@@ -219,6 +219,12 @@ def fetch_libreoffice():
             else soffice.parent.parent
         out.mkdir(parents=True, exist_ok=True)
         shutil.copytree(product_root, out, dirs_exist_ok=True)
+    # A tree without the launcher is worse than no tree: engines_status would
+    # ship "libreoffice: missing" inside a release installer.
+    if not (out / "program" / "soffice.exe").exists():
+        raise RuntimeError(
+            "libreoffice extract did not produce program/soffice.exe; "
+            f"got {[p.name for p in out.iterdir()]}")
     print("[done] libreoffice")
 
 

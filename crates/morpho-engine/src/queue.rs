@@ -50,6 +50,9 @@ pub struct JobEngine {
     tx: broadcast::Sender<JobEvent>,
     cancels: Mutex<HashMap<u64, CancellationToken>>,
     next_id: AtomicU64,
+    /// Only used when submit() is called outside any Tokio reactor (e.g. a sync
+    /// Tauri command on the main thread), where `tokio::spawn` would panic.
+    fallback_rt: std::sync::OnceLock<tokio::runtime::Runtime>,
 }
 
 impl JobEngine {
@@ -67,6 +70,7 @@ impl JobEngine {
             tx,
             cancels: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
+            fallback_rt: std::sync::OnceLock::new(),
         })
     }
 
@@ -89,9 +93,18 @@ impl JobEngine {
             name: source.display().to_string(),
         });
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        let job = async move {
             this.run(id, source, opts).await;
-        });
+        };
+        let _ = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle.spawn(job),
+            Err(_) => self
+                .fallback_rt
+                .get_or_init(|| {
+                    tokio::runtime::Runtime::new().expect("tokio fallback runtime")
+                })
+                .spawn(job),
+        };
         id
     }
 

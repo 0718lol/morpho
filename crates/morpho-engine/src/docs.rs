@@ -29,6 +29,12 @@ pub fn convert_args(src: &Path, target: Format, out_file: &Path) -> Option<Vec<S
     if matches!(target, Format::Html | Format::Epub) {
         args.push("-s".into()); // standalone document
     }
+    if target == Format::Html {
+        // Without this, media embedded in the source (e.g. images inside a
+        // docx) is only referenced as media/*.png and never written next to
+        // the output — the single-file HTML ships with broken images.
+        args.push("--embed-resources".into());
+    }
     if target == Format::Epub {
         let title = src
             .file_stem()

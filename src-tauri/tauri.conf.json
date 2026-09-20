@@ -33,14 +33,14 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "resources": [
-      "../engines/ffmpeg/*",
-      "../engines/poppler/*",
-      "../engines/pandoc/*",
-      "../engines/qpdf/*",
-      "../engines/tesseract/*",
-      "../engines/libreoffice/*"
-    ],
+    "resources": {
+      "../engines/ffmpeg/*": "engines/ffmpeg/",
+      "../engines/poppler/*": "engines/poppler/",
+      "../engines/pandoc/*": "engines/pandoc/",
+      "../engines/qpdf/*": "engines/qpdf/",
+      "../engines/tesseract/*": "engines/tesseract/",
+      "../engines/libreoffice/*": "engines/libreoffice/"
+    },
     "windows": {
       "nsis": {
         "languages": [
