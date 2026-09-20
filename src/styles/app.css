@@ -197,6 +197,13 @@ body {
   display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
   text-transform: uppercase; letter-spacing: 0.6px;
 }
+.hist-tab { cursor: pointer; opacity: 0.5; transition: opacity 0.15s ease; }
+.hist-tab:hover { opacity: 0.8; }
+.hist-tab.active { opacity: 1; color: var(--text); }
+.ghost-btn.danger:hover { color: #ff6b6b; border-color: #ff6b6b; }
+.ghost-btn.danger.armed {
+  color: #fff; background: #e5484d; border-color: #e5484d;
+}
 .queue-list, .history-list { display: flex; flex-direction: column; gap: 8px; }
 
 .job-card {

@@ -44,6 +44,11 @@ const dict: Record<Lang, Record<string, string>> = {
     catPdf: "PDF",
     searchablePdf: "可搜索 PDF",
     sameFormat: "与源格式相同",
+    archive: "归档",
+    archiveAction: "删除",
+    restoreAction: "恢复",
+    purgeAction: "彻底删除",
+    purgeConfirm: "确认删除？",
   },
   en: {
     tagline: "everything converts",
@@ -88,6 +93,11 @@ const dict: Record<Lang, Record<string, string>> = {
     catPdf: "PDF",
     searchablePdf: "Searchable PDF",
     sameFormat: "same as source",
+    archive: "Archive",
+    archiveAction: "Delete",
+    restoreAction: "Restore",
+    purgeAction: "Delete forever",
+    purgeConfirm: "Sure?",
   },
 };
 

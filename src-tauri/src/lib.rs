@@ -30,20 +30,40 @@ struct AppState {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct HistoryEntry {
+    #[serde(default)]
+    id: u64,
     source: String,
     output: String,
     target: String,
     when: String,
+    /// Soft-deleted entries live in the archive view until restored or purged.
+    #[serde(default)]
+    archived: bool,
+    #[serde(default)]
+    archived_at: Option<String>,
+}
+
+/// The app data dir is not auto-created by anything else; every write below
+/// silently no-ops without this (OpenOptions::create only makes the file).
+fn ensure_data_dir(app: &AppHandle) -> Option<PathBuf> {
+    let dir = app.path().app_data_dir();
+    if let Err(e) = &dir {
+        eprintln!("[morpho] app_data_dir() failed: {e}");
+    }
+    let dir = dir.ok()?;
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        eprintln!("[morpho] create_dir_all({}) failed: {e}", dir.display());
+        return None;
+    }
+    Some(dir)
 }
 
 fn settings_path(app: &AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_data_dir().ok()?;
-    Some(dir.join("settings.json"))
+    ensure_data_dir(app).map(|d| d.join("settings.json"))
 }
 
 fn history_path(app: &AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_data_dir().ok()?;
-    Some(dir.join("history.jsonl"))
+    ensure_data_dir(app).map(|d| d.join("history.jsonl"))
 }
 
 #[tauri::command]
@@ -62,8 +82,8 @@ fn engines_status(state: State<AppState>) -> Vec<(String, bool)> {
 }
 
 #[tauri::command]
-fn submit_jobs(
-    state: State<AppState>,
+async fn submit_jobs(
+    state: State<'_, AppState>,
     files: Vec<String>,
     target: String,
     output_dir: Option<String>,
@@ -123,6 +143,69 @@ fn clear_history(app: AppHandle, state: State<AppState>) {
     if let Some(path) = history_path(&app) {
         let _ = std::fs::remove_file(path);
     }
+}
+
+/// Rewrite history.jsonl from memory (the file is oldest-first, the in-memory
+/// list newest-first). Used by every mutating command below.
+fn save_history_file(app: &AppHandle, state: &AppState) {
+    let Some(path) = history_path(app) else { return };
+    let history = state.history.lock().unwrap();
+    let mut out = String::new();
+    for entry in history.iter().rev() {
+        if let Ok(line) = serde_json::to_string(entry) {
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+    let _ = std::fs::write(path, out);
+}
+
+fn with_entry(state: &AppState, id: u64, f: impl FnOnce(&mut HistoryEntry)) -> bool {
+    let mut history = state.history.lock().unwrap();
+    match history.iter_mut().find(|e| e.id == id) {
+        Some(entry) => {
+            f(entry);
+            true
+        }
+        None => false,
+    }
+}
+
+#[tauri::command]
+fn archive_history(app: AppHandle, state: State<AppState>, id: u64) -> Result<(), String> {
+    if !with_entry(&state, id, |e| {
+        e.archived = true;
+        e.archived_at = Some(chrono_like_now());
+    }) {
+        return Err(format!("no history entry #{id}"));
+    }
+    save_history_file(&app, &state);
+    Ok(())
+}
+
+#[tauri::command]
+fn restore_history(app: AppHandle, state: State<AppState>, id: u64) -> Result<(), String> {
+    if !with_entry(&state, id, |e| {
+        e.archived = false;
+        e.archived_at = None;
+    }) {
+        return Err(format!("no history entry #{id}"));
+    }
+    save_history_file(&app, &state);
+    Ok(())
+}
+
+/// Second-stage delete: the record is gone for good. The converted file on
+/// disk is intentionally left alone — only the history entry is removed.
+#[tauri::command]
+fn purge_history(app: AppHandle, state: State<AppState>, id: u64) -> Result<(), String> {
+    state
+        .history
+        .lock()
+        .unwrap()
+        .retain(|e| e.id != id);
+    save_history_file(&app, &state);
+    Ok(())
 }
 
 /// Reveal a file in Explorer / Finder.
@@ -208,6 +291,9 @@ pub fn run() {
             save_settings,
             get_history,
             clear_history,
+            archive_history,
+            restore_history,
+            purge_history,
             reveal
         ])
         .run(tauri::generate_context!())
@@ -216,6 +302,7 @@ pub fn run() {
 
 fn append_history(app: &AppHandle, output: &std::path::Path) {
     let entry = HistoryEntry {
+        id: 0, // assigned below from the in-memory list
         source: String::new(),
         output: output.display().to_string(),
         target: output
@@ -224,14 +311,25 @@ fn append_history(app: &AppHandle, output: &std::path::Path) {
             .unwrap_or("")
             .to_string(),
         when: chrono_like_now(),
+        archived: false,
+        archived_at: None,
     };
     if let Some(state) = app.try_state::<AppState>() {
-        state.history.lock().unwrap().insert(0, entry.clone());
-    }
-    if let Some(path) = history_path(app) {
-        use std::io::Write;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(f, "{}", serde_json::to_string(&entry).unwrap_or_default());
+        let mut history = state.history.lock().unwrap();
+        let id = history.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        let entry = HistoryEntry { id, ..entry };
+        history.insert(0, entry.clone());
+        drop(history);
+        if let Some(path) = history_path(app) {
+            use std::io::Write;
+            match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+                Ok(mut f) => {
+                    if let Err(e) = writeln!(f, "{}", serde_json::to_string(&entry).unwrap_or_default()) {
+                        eprintln!("[morpho] history write failed: {e}");
+                    }
+                }
+                Err(e) => eprintln!("[morpho] history open failed ({}): {e}", path.display()),
+            }
         }
     }
 }

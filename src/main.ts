@@ -51,6 +51,8 @@ const queueList = $("#queue-list");
 const historySection = $("#history");
 const historyList = $("#history-list");
 const clearHistoryBtn = $("#clear-history");
+const histTabRecent = $("#hist-tab-recent");
+const histTabArchive = $("#hist-tab-archive");
 const engineStatus = $("#engine-status");
 const statusText = $("#status-text");
 
@@ -318,21 +320,88 @@ function renderQueue() {
 
 /* ---------------- history ---------------- */
 
-interface HistoryEntry { source: string; output: string; target: string; when: string; }
+interface HistoryEntry {
+  id: number;
+  source: string;
+  output: string;
+  target: string;
+  when: string;
+  archived?: boolean;
+  archived_at?: string | null;
+}
+
+type HistoryView = "recent" | "archive";
+let historyView: HistoryView = "recent";
 
 async function renderHistory() {
   if (!isTauri) return;
   const items = await invoke<HistoryEntry[]>("get_history").catch(() => []);
+  const archivedCount = items.filter((h) => h.archived).length;
+  const list = items.filter((h) => (historyView === "archive" ? h.archived : !h.archived));
+  histTabArchive.textContent =
+    t("archive") + (archivedCount ? ` (${archivedCount})` : "");
   historyList.innerHTML = "";
   historySection.classList.toggle("hidden", items.length === 0);
-  for (const h of items.slice(0, 12)) {
+  for (const h of list.slice(0, 30)) {
     const el = document.createElement("div");
     el.className = "history-item";
+    const when = historyView === "archive" && h.archived_at ? h.archived_at : h.when;
     el.innerHTML = `
       <span class="h-target">${escapeHtml(h.target)}</span>
       <span class="h-path" title="${escapeHtml(h.output)}">${escapeHtml(h.output)}</span>
-      <span class="h-when">${escapeHtml(h.when)}</span>`;
+      <span class="h-when">${escapeHtml(when)}</span>`;
     el.addEventListener("click", () => invoke("reveal", { path: h.output }));
+
+    const open = document.createElement("button");
+    open.className = "ghost-btn small";
+    open.textContent = t("openDir");
+    open.addEventListener("click", (e) => {
+      e.stopPropagation();
+      invoke("reveal", { path: h.output });
+    });
+    el.appendChild(open);
+
+    if (historyView === "recent") {
+      const del = document.createElement("button");
+      del.className = "ghost-btn small";
+      del.textContent = t("archiveAction");
+      del.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await invoke("archive_history", { id: h.id }).catch(() => {});
+        renderHistory();
+      });
+      el.appendChild(del);
+    } else {
+      const restore = document.createElement("button");
+      restore.className = "ghost-btn small";
+      restore.textContent = t("restoreAction");
+      restore.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await invoke("restore_history", { id: h.id }).catch(() => {});
+        renderHistory();
+      });
+      el.appendChild(restore);
+
+      // Two-click confirm: first click arms the button, second purges.
+      const purge = document.createElement("button");
+      purge.className = "ghost-btn small danger";
+      purge.textContent = t("purgeAction");
+      purge.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        if (!purge.classList.contains("armed")) {
+          purge.classList.add("armed");
+          purge.textContent = t("purgeConfirm");
+          setTimeout(() => {
+            purge.classList.remove("armed");
+            purge.textContent = t("purgeAction");
+          }, 4000);
+          return;
+        }
+        await invoke("purge_history", { id: h.id }).catch(() => {});
+        renderHistory();
+      });
+      el.appendChild(purge);
+    }
     historyList.appendChild(el);
   }
 }
@@ -415,6 +484,18 @@ function bindStatic() {
     await invoke("clear_history").catch(() => {});
     renderHistory();
   });
+
+  for (const [tab, view] of [
+    [histTabRecent, "recent"],
+    [histTabArchive, "archive"],
+  ] as const) {
+    tab.addEventListener("click", () => {
+      historyView = view;
+      histTabRecent.classList.toggle("active", view === "recent");
+      histTabArchive.classList.toggle("active", view === "archive");
+      renderHistory();
+    });
+  }
 }
 
 async function bindDragDrop() {
