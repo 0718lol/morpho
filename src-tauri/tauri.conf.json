@@ -34,12 +34,12 @@
       "icons/icon.png"
     ],
     "resources": {
-      "../engines/ffmpeg/*": "engines/ffmpeg/",
-      "../engines/poppler/*": "engines/poppler/",
-      "../engines/pandoc/*": "engines/pandoc/",
-      "../engines/qpdf/*": "engines/qpdf/",
-      "../engines/tesseract/*": "engines/tesseract/",
-      "../engines/libreoffice/*": "engines/libreoffice/"
+      "../engines/ffmpeg": "engines/ffmpeg",
+      "../engines/poppler": "engines/poppler",
+      "../engines/pandoc": "engines/pandoc",
+      "../engines/qpdf": "engines/qpdf",
+      "../engines/tesseract": "engines/tesseract",
+      "../engines/libreoffice": "engines/libreoffice"
     },
     "windows": {
       "nsis": {
