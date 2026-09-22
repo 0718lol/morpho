@@ -3,7 +3,7 @@ resolver = "2"
 members = ["src-tauri", "crates/morpho-engine", "crates/morpho-cli"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 authors = ["0718lol"]
