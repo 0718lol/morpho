@@ -43,6 +43,8 @@
     },
     "windows": {
       "nsis": {
+        "template": "nsis-installer-template.nsi",
+        "compression": "zlib",
         "languages": [
           "SimpChinese",
           "English"
