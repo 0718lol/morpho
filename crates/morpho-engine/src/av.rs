@@ -122,24 +122,27 @@ pub async fn convert(
     cancel: &CancellationToken,
     mut progress: impl FnMut(f32, String) + Send,
 ) -> Result<()> {
-    let duration = match target {
-        Format::Gif | Format::Mp3 | Format::Wav | Format::Flac | Format::Ogg
-        | Format::Opus | Format::M4a | Format::Aac => probe_duration(ffprobe, src).await?,
-        _ => probe_duration(ffprobe, src).await?,
-    };
+    let duration = probe_duration(ffprobe, src).await?;
 
     if target == Format::Gif {
         return two_pass_gif(ffmpeg, src, dst, duration, opts, cancel, progress).await;
     }
 
-    let is_video_target = target.is_video() || target == Format::Gif;
-    let src_is_image = !matches!(target, Format::Gif) && {
+    let src_is_image = {
         let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("");
         matches!(Format::from_extension(ext), Some(f) if f.category() == crate::format::Category::Image)
     };
+    // -loop/-t are image2-demuxer options: valid for a STILL image input,
+    // rejected by the gif demuxer (an animated gif is a real video stream)
+    let src_is_still = src_is_image
+        && src
+            .extension()
+            .and_then(|e| e.to_str())
+            .and_then(Format::from_extension)
+            != Some(Format::Gif);
 
     let mut args: Vec<String> = vec!["-y".into(), "-hide_banner".into(), "-loglevel".into(), "error".into()];
-    if src_is_image && is_video_target {
+    if src_is_still && target.is_video() {
         // single still image -> short clip
         args.extend(["-loop".into(), "1".into(), "-t".into(), "3".into()]);
     }
@@ -153,6 +156,21 @@ pub async fn convert(
         }
     } else if target.is_audio() {
         args.extend(audio_args(target, opts));
+    } else if target == Format::Avif {
+        // AVIF still image: the muxer needs an explicit AV1 encoder;
+        // crf mirrors the quality mapping used by video_args
+        let crf = match opts.quality {
+            Some(q) => (51 - (q as f32 * 34.0 / 100.0).round() as i32)
+                .clamp(14, 51)
+                .to_string(),
+            None => "30".to_string(),
+        };
+        args.extend([
+            "-frames:v".into(), "1".into(),
+            "-c:v".into(), "libaom-av1".into(),
+            "-still-picture".into(), "1".into(),
+            "-crf".into(), crf,
+        ]);
     } else if matches!(target, Format::Png | Format::Jpg | Format::Webp | Format::Bmp | Format::Tiff) {
         // poster frame
         args.extend(["-frames:v".into(), "1".into()]);

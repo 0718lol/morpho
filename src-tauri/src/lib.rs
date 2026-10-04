@@ -111,9 +111,18 @@ fn cancel_job(state: State<AppState>, id: u64) {
 }
 
 #[tauri::command]
-fn thumbnail(path: String) -> Option<String> {
-    let png = morpho_engine::image::thumbnail_png(std::path::Path::new(&path), 160).ok()?;
-    Some(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(png)))
+async fn thumbnail(path: String) -> Option<String> {
+    // decode off the main thread — large images would freeze the UI otherwise
+    let png = tokio::task::spawn_blocking(move || {
+        morpho_engine::image::thumbnail_png(std::path::Path::new(&path), 160).ok()
+    })
+    .await
+    .ok()
+    .flatten()?;
+    Some(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png)
+    ))
 }
 
 #[tauri::command]
@@ -221,10 +230,29 @@ fn reveal(path: String) -> Result<(), String> {
     }
     #[cfg(not(windows))]
     {
-        std::process::Command::new("open")
-            .arg(path.parent().unwrap_or(std::path::Path::new(".")))
+        // ask Finder to reveal AND select the file itself; plain `open` only
+        // opens the parent folder with nothing highlighted. Fall back to it
+        // if the AppleScript path fails.
+        let script = format!(
+            "tell application \"Finder\" to reveal POSIX file \"{}\"",
+            path.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let revealed = std::process::Command::new("osascript")
+            .args(["-e", &script, "-e", "tell application \"Finder\" to activate"])
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .and_then(|mut c| c.wait())
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !revealed {
+            std::process::Command::new("open")
+                .arg(
+                    std::path::Path::new(&path)
+                        .parent()
+                        .unwrap_or(std::path::Path::new(".")),
+                )
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

@@ -85,9 +85,10 @@ fn run_soffice(
 
     let mut results = Vec::new();
     for input in inputs {
-        let produced = out_dir
-            .join(input.file_stem().unwrap_or_default())
-            .with_extension(target.extension());
+        // plain concat, NOT with_extension(): "a.b.docx" has stem "a.b" and
+        // with_extension would expect "a.pdf" where LO writes "a.b.pdf"
+        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+        let produced = out_dir.join(format!("{stem}.{}", target.extension()));
         if produced.exists() {
             results.push(produced);
         }

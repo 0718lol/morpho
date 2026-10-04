@@ -57,7 +57,12 @@ pub struct JobEngine {
 
 impl JobEngine {
     pub fn new() -> Arc<Self> {
-        let engines = Engines::discover_or_err().expect("engines directory not found; run scripts/fetch_engines.py");
+        // No engines dir: keep going anyway. Native-image jobs need no sidecar;
+        // sidecar jobs fail per-job with a precise EngineMissing error instead
+        // of panicking the whole app at startup.
+        let engines = Engines::discover().unwrap_or_else(|| Engines {
+            dir: std::env::temp_dir().join("morpho-engines-missing"),
+        });
         let office = engines.soffice().map(LibreOffice::new);
         let concurrency = std::thread::available_parallelism()
             .map(|n| n.get().clamp(1, 4))
@@ -230,9 +235,12 @@ impl JobEngine {
                 .await?;
             done_weight += w;
             current = dst;
-            // multi-page poppler output keeps page suffixes: point at page 1
+            // multi-page poppler output keeps page suffixes: point at page 1.
+            // Pass the SOURCE stem too: a conflict-resolved final name like
+            // "a (2).png" never matches pages poppler wrote as "a-1.png"…
             if !current.exists() {
-                if let Some(first) = first_sibling_page(&current) {
+                let src_stem = source.file_stem().and_then(|s| s.to_str());
+                if let Some(first) = first_sibling_page(&current, src_stem) {
                     current = first;
                 }
             }
@@ -470,17 +478,32 @@ fn unique_tmp(dir: &Path, idx: usize, target: Format) -> PathBuf {
     dir.join(format!("stage{idx}.{}", target.extension()))
 }
 
-fn first_sibling_page(dst: &Path) -> Option<PathBuf> {
+/// Find the lowest-numbered page file `<stem>-<n>.<ext>` next to `dst`.
+/// Tries `dst`'s own stem first, then `alt_stem` (the source's).
+fn first_sibling_page(dst: &Path, alt_stem: Option<&str>) -> Option<PathBuf> {
     let parent = dst.parent()?;
-    let stem = dst.file_stem()?.to_str()?;
     let ext = dst.extension()?.to_str()?;
+    dst.file_stem()
+        .and_then(|s| s.to_str())
+        .and_then(|stem| first_page_with_stem(parent, stem, ext))
+        .or_else(|| alt_stem.and_then(|stem| first_page_with_stem(parent, stem, ext)))
+}
+
+fn first_page_with_stem(parent: &Path, stem: &str, ext: &str) -> Option<PathBuf> {
+    let prefix = format!("{stem}-");
     let mut best: Option<(u32, PathBuf)> = None;
     for entry in std::fs::read_dir(parent).ok()?.flatten() {
         let p = entry.path();
-        let ps = p.file_stem()?.to_str()?;
-        let pe = p.extension()?.to_str()?;
+        // never `?` on per-entry fields: one odd entry (a directory, a
+        // dotfile) would abort the whole scan
+        let (Some(ps), Some(pe)) = (
+            p.file_stem().and_then(|s| s.to_str()),
+            p.extension().and_then(|s| s.to_str()),
+        ) else {
+            continue;
+        };
         if pe.eq_ignore_ascii_case(ext) {
-            if let Some(suffix) = ps.strip_prefix(&format!("{stem}-")) {
+            if let Some(suffix) = ps.strip_prefix(&prefix) {
                 if let Ok(n) = suffix.parse::<u32>() {
                     if best.as_ref().map(|(b, _)| n < *b).unwrap_or(true) {
                         best = Some((n, p));

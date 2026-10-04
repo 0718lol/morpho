@@ -69,9 +69,13 @@ pub async fn pdf_to_images(
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
+            // page files always carry a numeric suffix (`stem-1.png`); an
+            // unsuffixed file that happens to share the stem is NOT ours —
+            // counting it as a page inflates the total and breaks the
+            // single-page rename below
             p.file_stem()
                 .and_then(|s| s.to_str())
-                .map(|s| s == stem || s.starts_with(&format!("{stem}-")))
+                .map(|s| s.starts_with(&format!("{stem}-")))
                 .unwrap_or(false)
                 && p.extension().and_then(|e| e.to_str())
                     .map(|e| e.eq_ignore_ascii_case(if target == Format::Jpg { "jpg" } else { "png" }))

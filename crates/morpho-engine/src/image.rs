@@ -37,6 +37,15 @@ pub fn convert(src: &Path, dst: &Path, target: Format, quality: Option<u8>) -> R
             let enc = JpegEncoder::new_with_quality(w, q);
             img.write_with_encoder(enc)?;
         }
+        Format::Ico => {
+            // ICO frames max out at 256×256: downscale instead of erroring
+            let img = if img.width() > 256 || img.height() > 256 {
+                img.resize(256, 256, image::imageops::FilterType::Triangle)
+            } else {
+                img
+            };
+            img.save_with_format(dst, ImFmt::Ico)?;
+        }
         _ => {
             img.save_with_format(dst, fmt)?;
         }

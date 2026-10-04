@@ -97,6 +97,18 @@ mod tests {
     }
 
     #[test]
+    fn routes_rtf_without_pandoc_reader() {
+        // pandoc cannot READ rtf: everything routes through LibreOffice
+        assert_eq!(pipelines(Rtf, Docx), Some(vec![Pipeline::LibreOffice]));
+        assert_eq!(pipelines(Rtf, Pdf), Some(vec![Pipeline::LibreOffice]));
+        assert_eq!(pipelines(Rtf, Txt), Some(vec![Pipeline::LibreOffice]));
+        assert_eq!(
+            pipelines(Rtf, Md),
+            Some(vec![Pipeline::LibreOffice, Pipeline::Pandoc])
+        );
+    }
+
+    #[test]
     fn rejects_impossible() {
         assert!(plan(Mp3, Docx).is_none());
         assert!(plan(Png, Png).is_none());

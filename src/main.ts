@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { applyStatic, lang, setLang, t } from "./i18n";
@@ -83,12 +84,21 @@ function extOf(p: string): string {
   return i > 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
+/** Alias extensions the backend accepts; map to the canonical matrix key. */
+const EXT_ALIAS: Record<string, string> = {
+  jpeg: "jpg", jpe: "jpg", htm: "html", xhtml: "html", yml: "yaml",
+  tif: "tiff", log: "txt", text: "txt", markdown: "md", tsv: "csv",
+  heif: "heic", dib: "bmp", oga: "ogg", m4b: "m4a", xlsm: "xlsx",
+  et: "xls", dps: "ppt",
+};
+const canonExt = (e: string): string => EXT_ALIAS[e] ?? e;
+
 /* ---------------- files ---------------- */
 
 function addPaths(paths: string[]) {
   let added = 0;
   for (const p of paths) {
-    const ext = extOf(p);
+    const ext = canonExt(extOf(p));
     if (!matrix.has(ext)) {
       status(t("browserHint").replace("浏览器预览模式：转换功能需在桌面应用中使用", `跳过不支持的文件: ${basename(p)}`));
       continue;
@@ -447,7 +457,7 @@ function bindStatic() {
   fileInput.addEventListener("change", () => {
     // browser preview: no real paths available
     for (const f of Array.from(fileInput.files ?? [])) {
-      const ext = extOf(f.name);
+      const ext = canonExt(extOf(f.name));
       if (!matrix.has(ext)) continue;
       files.push({ path: f.name, name: f.name, size: f.size, fmt: ext });
     }
@@ -574,7 +584,8 @@ async function boot() {
   }
 
   await Promise.all([bindDragDrop(), bindJobEvents(), renderHistory(), refreshEngineStatus()]);
-  status(`🦋 Morpho v0.1.0 — ${t("localOnly")}`);
+  const ver = isTauri ? await getVersion().catch(() => "0.1.1") : "0.1.1";
+  status(`🦋 Morpho v${ver} — ${t("localOnly")}`);
 }
 
 function mockMatrix(): MatrixEntry[] {

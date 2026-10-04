@@ -155,8 +155,10 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
         Category::Text | Category::Document | Category::Sheet | Category::Slide
     );
     if textish_src {
-        // pandoc-first paths (md/html/txt sources, rich targets)
-        let pandoc_src = matches!(src, Md | Html | Txt | Rtf | Docx | Odt | Epub);
+        // pandoc-first paths (md/html/txt sources, rich targets).
+        // NOTE: no Rtf here — pandoc can write but not read RTF; rtf sources
+        // fall through to LibreOffice below.
+        let pandoc_src = matches!(src, Md | Html | Txt | Docx | Odt | Epub);
         if dst == Pdf {
             // md has no direct LO import; go md -> docx -> pdf
             if matches!(src, Md | Epub) {
@@ -165,11 +167,17 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
                 });
             }
             if pandoc_src || matches!(src.category(), Category::Sheet | Category::Slide)
-                || matches!(src, Doc | Csv)
+                || matches!(src, Doc | Csv | Rtf)
             {
                 return Some(Plan { steps: vec![s(Pipeline::LibreOffice, Pdf)] });
             }
             return None;
+        }
+        // rtf -> md has no single-engine path: LibreOffice to docx, pandoc to md
+        if src == Rtf && dst == Md {
+            return Some(Plan {
+                steps: vec![s(Pipeline::LibreOffice, Docx), s(Pipeline::Pandoc, Md)],
+            });
         }
         if pandoc_src && matches!(dst, Md | Html | Epub | Docx | Odt | Rtf | Txt) {
             return Some(Plan { steps: vec![s(Pipeline::Pandoc, dst)] });
