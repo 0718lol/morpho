@@ -36,6 +36,17 @@ impl Engines {
                 if dir.is_dir() {
                     return Some(Engines { dir });
                 }
+                // macOS .app layout: <exe>=Morpho.app/Contents/MacOS/<bin>,
+                // resources land in Contents/Resources/engines
+                #[cfg(target_os = "macos")]
+                if let Some(dir) = parent
+                    .parent()
+                    .map(|p| p.join("Resources").join("engines"))
+                {
+                    if dir.is_dir() {
+                        return Some(Engines { dir });
+                    }
+                }
             }
         }
         // dev fallback: <repo>/engines two levels above this crate

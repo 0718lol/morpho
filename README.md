@@ -72,6 +72,13 @@ npm run tauri build               # 产出 NSIS 安装包
 npm run tauri dev                 # 开发模式
 ```
 
+macOS：`fetch_engines.py` 是 Windows 引擎包，mac 上自备引擎（`brew install ffmpeg poppler tesseract pandoc qpdf`，LibreOffice 装好后软链 `ln -s /Applications/LibreOffice.app/Contents/MacOS/soffice engines/libreoffice/program/soffice`，按 `engines/` 目录布局摆放），然后：
+
+```bash
+./scripts/build_mac.sh            # 产出瘦版 Morpho.app（引擎不入包体）
+./scripts/build_mac.sh --desktop  # 顺手拷到桌面
+```
+
 ## 架构
 
 ```
@@ -131,6 +138,11 @@ npm install
 python scripts/fetch_engines.py
 npm run tauri build
 ```
+
+macOS: fetch_engines.py fetches Windows engines — install your own instead
+(`brew install ffmpeg poppler tesseract pandoc qpdf`, symlink LibreOffice's
+`soffice` into `engines/libreoffice/program/`), then run
+`./scripts/build_mac.sh` for a slim Morpho.app.
 
 ## License
 

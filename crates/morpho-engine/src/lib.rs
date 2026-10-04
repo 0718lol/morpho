@@ -109,6 +109,31 @@ mod tests {
     }
 
     #[test]
+    fn same_format_reencode() {
+        // plan() keeps refusing identity conversions…
+        assert!(plan(Mp4, Mp4).is_none());
+        assert!(plan(Png, Png).is_none());
+        // …but re-encode exists where a quality/preset knob applies
+        assert_eq!(
+            crate::route::reencode_plan(Mp4).map(|p| p.steps[0].pipeline),
+            Some(Pipeline::Ffmpeg)
+        );
+        assert_eq!(
+            crate::route::reencode_plan(Mp3).map(|p| p.steps[0].pipeline),
+            Some(Pipeline::Ffmpeg)
+        );
+        assert_eq!(
+            crate::route::reencode_plan(Jpg).map(|p| p.steps[0].pipeline),
+            Some(Pipeline::NativeImage)
+        );
+        assert!(crate::route::reencode_plan(Png).is_none());
+        assert!(crate::route::reencode_plan(Pdf).is_none());
+        // and the UI matrix lists the format itself as a target
+        assert!(crate::route::targets_for(Mp4).contains(&Mp4));
+        assert!(!crate::route::targets_for(Png).contains(&Png));
+    }
+
+    #[test]
     fn rejects_impossible() {
         assert!(plan(Mp3, Docx).is_none());
         assert!(plan(Png, Png).is_none());

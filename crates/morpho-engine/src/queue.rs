@@ -156,9 +156,23 @@ impl JobEngine {
                 Error::Other(format!("unknown input type: {}", source.display()))
             })?;
 
-        let mut plan = route::plan(src_format, opts.target).ok_or_else(|| {
-            Error::Unsupported(src_format.to_string(), opts.target.to_string())
-        })?;
+        let mut plan = if src_format == opts.target {
+            // same-format re-encode: only offered when a quality/preset knob
+            // was actually requested, otherwise it would be a no-op request
+            if opts.quality.is_none() && opts.preset.is_none() {
+                return Err(Error::Other(format!(
+                    "re-encoding {} to itself needs a quality or preset option",
+                    src_format
+                )));
+            }
+            route::reencode_plan(src_format).ok_or_else(|| {
+                Error::Unsupported(src_format.to_string(), opts.target.to_string())
+            })?
+        } else {
+            route::plan(src_format, opts.target).ok_or_else(|| {
+                Error::Unsupported(src_format.to_string(), opts.target.to_string())
+            })?
+        };
 
         // the chosen output directory may not exist yet
         if let Some(dir) = &opts.output_dir {

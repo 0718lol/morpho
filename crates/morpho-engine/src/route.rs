@@ -53,7 +53,6 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
         return None;
     }
     use Format::*;
-
     // ---------- from images ----------
     if src.category() == Category::Image && (src.is_native_image() || matches!(src, Avif | Heic)) {
         if dst.category() == Category::Image {
@@ -202,11 +201,33 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
     None
 }
 
-/// All targets supported from `src`, grouped for the UI.
+/// Plan for re-encoding a file to its OWN format. Only meaningful where a
+/// quality/preset knob actually does something: av streams and images whose
+/// encoder takes quality (jpg native; webp/avif via ffmpeg). Other formats
+/// have no knob, so "converting" them to themselves stays unsupported.
+pub fn reencode_plan(f: Format) -> Option<Plan> {
+    use Format::*;
+    let step = |p: Pipeline| Some(Plan { steps: vec![s(p, f)] });
+    if f.is_video() || f.is_audio() {
+        return step(Pipeline::Ffmpeg);
+    }
+    match f {
+        Format::Jpg => step(Pipeline::NativeImage),
+        Format::Webp | Format::Avif => step(Pipeline::Ffmpeg),
+        _ => None,
+    }
+}
+
+/// All targets supported from `src`, grouped for the UI. Re-encodable
+/// formats additionally list themselves (e.g. mp4 -> mp4 with a preset).
 pub fn targets_for(src: Format) -> Vec<Format> {
-    crate::format::Category::all()
+    let mut out: Vec<Format> = crate::format::Category::all()
         .iter()
         .flat_map(|c| crate::format::formats_in_category(*c))
         .filter(|f| plan(src, *f).is_some())
-        .collect()
+        .collect();
+    if reencode_plan(src).is_some() {
+        out.push(src);
+    }
+    out
 }
