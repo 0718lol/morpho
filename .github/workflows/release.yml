@@ -38,6 +38,10 @@ jobs:
 
       - name: Fetch conversion engines
         run: python scripts/fetch_engines.py
+        env:
+          # fetch_engines.py hits api.github.com for qpdf; unauthenticated
+          # calls share a 60/hr-per-IP quota that CI runners exhaust
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install frontend deps
         run: npm ci
