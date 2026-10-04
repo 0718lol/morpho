@@ -271,10 +271,36 @@ fn is_bullet_text(text: &str) -> bool {
 fn is_numbered(text: &str) -> bool {
     let t = text.trim_start();
     let mut chars = t.chars();
-    let d1 = chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false);
-    let d2 = chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false);
-    let sep = chars.next();
-    d1 && (sep == Some('.') || sep == Some(')') || (d2 && sep == Some('.')))
+    if !chars.next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        return false;
+    }
+    // consume the rest of the number, then require '.' or ')'
+    let mut c = chars.next();
+    while c.map(|c| c.is_ascii_digit()).unwrap_or(false) {
+        c = chars.next();
+    }
+    if !matches!(c, Some('.') | Some(')')) {
+        return false;
+    }
+    // "1.5 million" is a number, not a list item: require whitespace
+    // (or end of line) right after the separator
+    matches!(chars.next(), None | Some(' ') | Some('\t'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_numbered;
+
+    #[test]
+    fn numbered_list_detection() {
+        assert!(is_numbered("1. item"));
+        assert!(is_numbered("1) item"));
+        assert!(is_numbered("12. item"));
+        assert!(is_numbered("1)"));
+        assert!(!is_numbered("1.5 million"));
+        assert!(!is_numbered("plain text"));
+        assert!(!is_numbered("a. item"));
+    }
 }
 
 /// Re-flow parsed pages into paragraph/table/image blocks.

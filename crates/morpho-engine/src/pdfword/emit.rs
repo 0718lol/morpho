@@ -89,6 +89,11 @@ pub fn emit_docx(flow: &Flow, dst: &Path) -> Result<()> {
                     docx = docx.add_paragraph(p);
                 }
                 Block::Table { rows, .. } => {
+                    // a docx table cannot carry page_break_before itself;
+                    // an empty paragraph before it holds the page break
+                    if page_break {
+                        docx = docx.add_paragraph(Paragraph::new().page_break_before(true));
+                    }
                     let table = build_table(rows);
                     docx = docx.add_table(table);
                     docx = docx.add_paragraph(Paragraph::new());

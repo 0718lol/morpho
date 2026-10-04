@@ -358,7 +358,7 @@ async function renderHistory() {
     const when = historyView === "archive" && h.archived_at ? h.archived_at : h.when;
     el.innerHTML = `
       <span class="h-target">${escapeHtml(h.target)}</span>
-      <span class="h-path" title="${escapeHtml(h.output)}">${escapeHtml(h.output)}</span>
+      <span class="h-path" title="${escapeHtml(h.source ? `${h.source} → ${h.output}` : h.output)}">${escapeHtml(h.output)}</span>
       <span class="h-when">${escapeHtml(when)}</span>`;
     el.addEventListener("click", () => invoke("reveal", { path: h.output }));
 
@@ -416,6 +416,53 @@ async function renderHistory() {
   }
 }
 
+/* ---------------- settings (persisted via the backend) ---------------- */
+
+interface Settings {
+  output_dir?: string | null;
+  quality?: number | null;
+  preset?: string | null;
+  theme?: string | null;
+  lang?: string | null;
+}
+
+let settingsLoaded = false;
+
+async function loadSettings() {
+  if (!isTauri) return;
+  const s = await invoke<Settings>("get_settings").catch(() => null);
+  if (!s) return;
+  if (s.output_dir) {
+    outputDir = s.output_dir;
+    outputLabel.textContent = s.output_dir;
+    clearOutput.classList.remove("hidden");
+  }
+  if (typeof s.quality === "number") {
+    qualitySlider.value = String(s.quality);
+    qualityValue.textContent = String(s.quality);
+  }
+  if (s.theme === "light" || s.theme === "dark") {
+    document.documentElement.classList.toggle("light", s.theme === "light");
+    localStorage.setItem("morpho-theme", s.theme);
+  }
+  settingsLoaded = true;
+}
+
+function saveSettings() {
+  if (!isTauri || !settingsLoaded) return;
+  const theme = document.documentElement.classList.contains("light") ? "light" : "dark";
+  const quality = parseInt(qualitySlider.value, 10);
+  invoke("save_settings", {
+    settings: {
+      output_dir: outputDir,
+      quality: Number.isNaN(quality) ? null : quality,
+      preset: null,
+      theme,
+      lang,
+    } satisfies Settings,
+  }).catch(() => {});
+}
+
 /* ---------------- misc ui ---------------- */
 
 function status(msg: string) {
@@ -436,6 +483,7 @@ function bindStatic() {
   $("#theme-toggle").addEventListener("click", () => {
     const light = document.documentElement.classList.toggle("light");
     localStorage.setItem("morpho-theme", light ? "light" : "dark");
+    saveSettings();
   });
   if (localStorage.getItem("morpho-theme") === "light") {
     document.documentElement.classList.add("light");
@@ -445,6 +493,7 @@ function bindStatic() {
   langBtn.textContent = lang === "zh" ? "EN" : "中";
   langBtn.addEventListener("click", () => {
     setLang(lang === "zh" ? "en" : "zh");
+    saveSettings();
     location.reload();
   });
 
@@ -471,6 +520,7 @@ function bindStatic() {
 
   qualitySlider.addEventListener("input", () => {
     qualityValue.textContent = qualitySlider.value;
+    saveSettings();
   });
 
   convertBtn.addEventListener("click", convert);
@@ -482,12 +532,14 @@ function bindStatic() {
       outputDir = dir;
       outputLabel.textContent = dir;
       clearOutput.classList.remove("hidden");
+      saveSettings();
     }
   });
   clearOutput.addEventListener("click", () => {
     outputDir = null;
     outputLabel.textContent = t("outputSame");
     clearOutput.classList.add("hidden");
+    saveSettings();
   });
 
   clearHistoryBtn.addEventListener("click", async () => {
@@ -584,6 +636,7 @@ async function boot() {
   }
 
   await Promise.all([bindDragDrop(), bindJobEvents(), renderHistory(), refreshEngineStatus()]);
+  await loadSettings();
   const ver = isTauri ? await getVersion().catch(() => "0.1.1") : "0.1.1";
   status(`🦋 Morpho v${ver} — ${t("localOnly")}`);
 }

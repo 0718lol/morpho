@@ -23,39 +23,30 @@ pub struct AvOptions {
 }
 
 fn video_args(target: Format, opts: &AvOptions) -> Vec<String> {
-    let crf = match opts.quality {
+    let mut crf = match opts.quality {
         Some(q) => (51 - (q as f32 * 34.0 / 100.0).round() as i32).clamp(14, 51).to_string(),
         None => "23".to_string(),
     };
-    let mut scale = String::new();
-    let mut extra: Vec<String> = vec![];
-    match opts.preset.as_deref() {
-        Some("wechat") => {
-            scale = "-vf".into();
-            extra = vec!["scale='min(1280,iw)':-2".into()];
-        }
-        Some("archive") => {
-            scale = "-vf".into();
-            extra = vec!["scale='min(1920,iw)':-2".into()];
-        }
-        _ => {}
+    let scale: Option<&str> = match opts.preset.as_deref() {
+        Some("wechat") => Some("scale='min(1280,iw)':-2"),
+        Some("web") => Some("scale='min(1920,iw)':-2"),
+        // archive keeps the source resolution and encodes tighter instead
+        Some("archive") => None,
+        _ => None,
+    };
+    if opts.preset.as_deref() == Some("archive") {
+        crf = "18".into();
     }
-    match target {
-        Format::Mp4 | Format::Mov | Format::M4v => {
-            let mut v = vec![
-                "-c:v".into(), "libx264".into(),
-                "-preset".into(), "medium".into(),
-                "-crf".into(), crf,
-                "-pix_fmt".into(), "yuv420p".into(),
-                "-c:a".into(), "aac".into(), "-b:a".into(), "192k".into(),
-                "-movflags".into(), "+faststart".into(),
-            ];
-            if !scale.is_empty() {
-                v.push(scale);
-                v.extend(extra);
-            }
-            v
-        }
+
+    let mut v: Vec<String> = match target {
+        Format::Mp4 | Format::Mov | Format::M4v => vec![
+            "-c:v".into(), "libx264".into(),
+            "-preset".into(), "medium".into(),
+            "-crf".into(), crf,
+            "-pix_fmt".into(), "yuv420p".into(),
+            "-c:a".into(), "aac".into(), "-b:a".into(), "192k".into(),
+            "-movflags".into(), "+faststart".into(),
+        ],
         Format::Mkv => vec![
             "-c:v".into(), "libx264".into(),
             "-preset".into(), "medium".into(),
@@ -82,7 +73,13 @@ fn video_args(target: Format, opts: &AvOptions) -> Vec<String> {
             "-c:a".into(), "aac".into(), "-b:a".into(), "128k".into(),
         ],
         _ => vec![],
+    };
+    // presets apply to every video target, not just the mp4 family
+    if let Some(f) = scale {
+        v.push("-vf".into());
+        v.push(f.into());
     }
+    v
 }
 
 fn audio_args(target: Format, opts: &AvOptions) -> Vec<String> {

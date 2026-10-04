@@ -291,10 +291,24 @@ pub fn run() {
             let mut rx = engine.subscribe();
             let emitter = handle.clone();
             tauri::async_runtime::spawn(async move {
+                // Queued events carry the source path; keep it per job so the
+                // history entry records what went IN, not just what came out
+                let mut sources: std::collections::HashMap<u64, String> =
+                    std::collections::HashMap::new();
                 loop {
                     if let Ok(ev) = rx.recv().await {
-                        if let JobEvent::Done { output, .. } = &ev {
-                            append_history(&emitter, output);
+                        match &ev {
+                            JobEvent::Queued { id, name } => {
+                                sources.insert(*id, name.clone());
+                            }
+                            JobEvent::Done { id, output } => {
+                                let source = sources.remove(id).unwrap_or_default();
+                                append_history(&emitter, output, &source);
+                            }
+                            JobEvent::Failed { id, .. } | JobEvent::Cancelled { id } => {
+                                sources.remove(id);
+                            }
+                            _ => {}
                         }
                         let _ = emitter.emit("job-event", &ev);
                     }
@@ -328,10 +342,10 @@ pub fn run() {
         .expect("error while running Morpho");
 }
 
-fn append_history(app: &AppHandle, output: &std::path::Path) {
+fn append_history(app: &AppHandle, output: &std::path::Path, source: &str) {
     let entry = HistoryEntry {
         id: 0, // assigned below from the in-memory list
-        source: String::new(),
+        source: source.to_string(),
         output: output.display().to_string(),
         target: output
             .extension()
@@ -362,27 +376,8 @@ fn append_history(app: &AppHandle, output: &std::path::Path) {
     }
 }
 
-/// RFC3339-ish local timestamp without pulling chrono.
+/// Local-time timestamp (`chrono` was already in the tree via tauri; the old
+/// hand-rolled version formatted UTC seconds, 8h off for UTC+8 users).
 fn chrono_like_now() -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let days = now / 86400;
-    let (y, m, d) = civil_from_days(days as i64);
-    let tod = now % 86400;
-    format!("{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}", tod / 3600, (tod % 3600) / 60, tod % 60)
-}
-
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    let z = z + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    (if m <= 2 { y + 1 } else { y }, m, d)
+    chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
