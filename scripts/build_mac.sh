@@ -11,6 +11,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# rustup installs cargo outside the default PATH on some setups
+export PATH="$HOME/.cargo/bin:$PATH"
+
 npm run tauri build
 
 APP="target/release/bundle/macos/Morpho.app"
