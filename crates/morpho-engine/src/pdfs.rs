@@ -203,6 +203,8 @@ pub async fn rotate(
         return Err(Error::Other(format!("rotation must be 90, 180 or 270, got {degrees}")));
     }
     let range = pages.unwrap_or("1-z");
+    let total = page_count(qpdf, src).await?;
+    validate_range(range, total)?;
     let args = vec![
         src.display().to_string(),
         format!("--rotate={degrees}:{range}"),
@@ -230,6 +232,7 @@ pub async fn delete_pages(qpdf: &Path, src: &Path, out: &Path, delete_spec: &str
 
 /// Reorder pages: `order` lists the desired sequence, e.g. "3,1,2".
 pub async fn reorder(qpdf: &Path, src: &Path, out: &Path, order: &str) -> Result<()> {
+    let total = page_count(qpdf, src).await?;
     let mut args: Vec<String> = vec![src.display().to_string(), "--pages".into()];
     for tok in order.split(",").map(str::trim).filter(|t| !t.is_empty()) {
         let n = tok
@@ -237,6 +240,9 @@ pub async fn reorder(qpdf: &Path, src: &Path, out: &Path, order: &str) -> Result
             .map_err(|_| Error::Other(format!("invalid page number: {tok}")))?;
         if n == 0 {
             return Err(Error::Other("page numbers start at 1".into()));
+        }
+        if n > total {
+            return Err(Error::Other(format!("invalid page number: {n} (document has {total} pages)")));
         }
         // qpdf requires the file name before every page range in the list
         args.push(src.display().to_string());
@@ -316,4 +322,27 @@ fn push_range(out: &mut String, a: u32, b: u32) {
     } else {
         out.push_str(&format!("{a}-{b},"));
     }
+}
+
+/// Validate a qpdf page range spec (e.g. "1,3-5,z") against the page count.
+fn validate_range(spec: &str, total: u32) -> Result<()> {
+    for tok in spec.split(",").map(str::trim).filter(|t| !t.is_empty()) {
+        if tok == "z" || tok == "1-z" {
+            continue;
+        }
+        if let Some((a, b)) = tok.split_once("-") {
+            let (a, b) = (a.trim(), b.trim());
+            let start: u32 = a.parse().map_err(|_| Error::Other(format!("invalid page range: {tok}")))?;
+            let end: u32 = if b == "z" { total } else { b.parse().map_err(|_| Error::Other(format!("invalid page range: {tok}")))? };
+            if start == 0 || end > total || start > end {
+                return Err(Error::Other(format!("invalid page range: {tok} (document has {total} pages)")));
+            }
+        } else {
+            let n: u32 = tok.parse().map_err(|_| Error::Other(format!("invalid page range: {tok}")))?;
+            if n == 0 || n > total {
+                return Err(Error::Other(format!("invalid page range: {tok} (document has {total} pages)")));
+            }
+        }
+    }
+    Ok(())
 }
