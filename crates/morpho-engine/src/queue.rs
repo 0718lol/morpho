@@ -473,7 +473,8 @@ impl JobEngine {
                     .engines
                     .pdftohtml()
                     .ok_or_else(|| Error::EngineMissing("poppler".into(), String::new()))?;
-                pdfword::convert(&pdftohtml, src, dst, token, report).await?;
+                let pdftoppm = self.engines.pdftoppm();
+                pdfword::convert(&pdftohtml, pdftoppm.as_deref(), src, dst, token, report).await?;
             }
             Pipeline::Copy => {
                 std::fs::copy(src, dst)?;

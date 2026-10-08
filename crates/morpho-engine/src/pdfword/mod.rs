@@ -6,6 +6,7 @@
 //! emits real OOXML via docx-rs. Pure Rust — no office suite in the loop.
 
 pub mod emit;
+pub mod grid;
 pub mod layout;
 pub mod parser;
 
@@ -18,6 +19,7 @@ use crate::error::{Error, Result};
 /// Convert `src.pdf` to `dst.docx`.
 pub async fn convert(
     pdftohtml: &Path,
+    pdftoppm: Option<&Path>,
     src: &Path,
     dst: &Path,
     token: &CancellationToken,
@@ -31,7 +33,13 @@ pub async fn convert(
     report(0.25, "layout");
 
     let doc = parser::parse(&base.with_extension("xml"), tmp.path())?;
-    let flow = layout::reflow(doc, token, report)?;
+    // grid detection is best-effort: without poppler or without detectable
+    // ruling lines the layout falls back to column-alignment heuristics
+    let grids = match pdftoppm {
+        Some(pp) => grid::detect_grids(pp, src).await.unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let flow = layout::reflow_with_grids(doc, grids, token, report)?;
     if token.is_cancelled() {
         return Err(Error::Cancelled);
     }

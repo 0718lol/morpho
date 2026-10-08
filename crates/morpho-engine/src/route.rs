@@ -206,7 +206,7 @@ pub fn plan(src: Format, dst: Format) -> Option<Plan> {
 /// encoder takes quality (jpg native; webp/avif via ffmpeg). Other formats
 /// have no knob, so "converting" them to themselves stays unsupported.
 pub fn reencode_plan(f: Format) -> Option<Plan> {
-    use Format::*;
+    
     let step = |p: Pipeline| Some(Plan { steps: vec![s(p, f)] });
     if f.is_video() || f.is_audio() {
         return step(Pipeline::Ffmpeg);
