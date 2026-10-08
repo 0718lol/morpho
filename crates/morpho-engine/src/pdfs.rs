@@ -169,3 +169,151 @@ pub async fn decrypt(qpdf: &Path, src: &Path, out: &Path, password: Option<&str>
     args.push(out.display().to_string());
     qpdf_run(qpdf, &args).await
 }
+
+
+/// Total pages via qpdf --show-npages.
+pub async fn page_count(qpdf: &Path, src: &Path) -> Result<u32> {
+    let outp = Command::new(qpdf)
+        .arg("--show-npages")
+        .arg(src)
+        .output()
+        .await?;
+    if !outp.status.success() {
+        return Err(Error::ProcessFailed {
+            engine: "qpdf".into(),
+            code: outp.status.code().unwrap_or(-1),
+            stderr: String::from_utf8_lossy(&outp.stderr).to_string(),
+        });
+    }
+    let text = String::from_utf8_lossy(&outp.stdout).trim().to_string();
+    text.parse::<u32>()
+        .map_err(|_| Error::Other(format!("page count unreadable: {text}")))
+}
+
+/// Rotate pages. `degrees` must be 90/180/270; `pages` is a qpdf page spec
+/// (e.g. "1-3", "1,4"), or None for all pages.
+pub async fn rotate(
+    qpdf: &Path,
+    src: &Path,
+    out: &Path,
+    degrees: u32,
+    pages: Option<&str>,
+) -> Result<()> {
+    if !matches!(degrees, 90 | 180 | 270) {
+        return Err(Error::Other(format!("rotation must be 90, 180 or 270, got {degrees}")));
+    }
+    let range = pages.unwrap_or("1-z");
+    let args = vec![
+        src.display().to_string(),
+        format!("--rotate={degrees}:{range}"),
+        "--".into(),
+        out.display().to_string(),
+    ];
+    qpdf_run(qpdf, &args).await
+}
+
+/// Delete the given pages (comma-separated, ranges with `-`), keeping the
+/// rest in their original order.
+pub async fn delete_pages(qpdf: &Path, src: &Path, out: &Path, delete_spec: &str) -> Result<()> {
+    let total = page_count(qpdf, src).await?;
+    let keep = invert_spec(delete_spec, total)?;
+    let args = vec![
+        src.display().to_string(),
+        "--pages".into(),
+        src.display().to_string(),
+        keep,
+        "--".into(),
+        out.display().to_string(),
+    ];
+    qpdf_run(qpdf, &args).await
+}
+
+/// Reorder pages: `order` lists the desired sequence, e.g. "3,1,2".
+pub async fn reorder(qpdf: &Path, src: &Path, out: &Path, order: &str) -> Result<()> {
+    let mut args: Vec<String> = vec![src.display().to_string(), "--pages".into()];
+    for tok in order.split(",").map(str::trim).filter(|t| !t.is_empty()) {
+        let n = tok
+            .parse::<u32>()
+            .map_err(|_| Error::Other(format!("invalid page number: {tok}")))?;
+        if n == 0 {
+            return Err(Error::Other("page numbers start at 1".into()));
+        }
+        // qpdf requires the file name before every page range in the list
+        args.push(src.display().to_string());
+        args.push(tok.to_string());
+    }
+    if args.len() <= 2 {
+        return Err(Error::Other("empty page order".into()));
+    }
+    args.push("--".into());
+    args.push(out.display().to_string());
+    qpdf_run(qpdf, &args).await
+}
+
+/// Shrink file size: recompress streams and downscale oversized images.
+pub async fn compress(qpdf: &Path, src: &Path, out: &Path) -> Result<()> {
+    let args = vec![
+        src.display().to_string(),
+        "--optimize-images".into(),
+        "--stream-data=compress".into(),
+        "--".into(),
+        out.display().to_string(),
+    ];
+    qpdf_run(qpdf, &args).await
+}
+
+/// Turn a delete spec ("1,3-5") into a keep spec ("2,6-z") for --pages.
+fn invert_spec(spec: &str, total: u32) -> Result<String> {
+    let mut deleted = vec![false; (total + 1) as usize];
+    for tok in spec.split(",").map(str::trim).filter(|t| !t.is_empty()) {
+        let bad = || Error::Other(format!("invalid page number: {tok}"));
+        let (a, b) = match tok.split_once("-") {
+            Some((a, b)) => (
+                a.trim().parse::<u32>().map_err(|_| bad())?,
+                b.trim().parse::<u32>().map_err(|_| bad())?,
+            ),
+            None => {
+                let n = tok.parse::<u32>().map_err(|_| bad())?;
+                (n, n)
+            }
+        };
+        if a == 0 || b < a || b > total {
+            return Err(Error::Other(format!(
+                "invalid page range: {tok} (document has {total} pages)"
+            )));
+        }
+        for p in a..=b {
+            deleted[p as usize] = true;
+        }
+    }
+    let mut keep = String::new();
+    let mut run: Option<(u32, u32)> = None;
+    for p in 1..=total {
+        if deleted[p as usize] {
+            if let Some((a, b)) = run.take() {
+                push_range(&mut keep, a, b);
+            }
+        } else {
+            run = match run {
+                Some((a, b)) => Some((a, b + 1)),
+                None => Some((p, p)),
+            };
+        }
+    }
+    if let Some((a, b)) = run.take() {
+        push_range(&mut keep, a, b);
+    }
+    if keep.is_empty() {
+        return Err(Error::Other("cannot delete every page".into()));
+    }
+    keep.pop(); // trailing comma
+    Ok(keep)
+}
+
+fn push_range(out: &mut String, a: u32, b: u32) {
+    if a == b {
+        out.push_str(&format!("{a},"));
+    } else {
+        out.push_str(&format!("{a}-{b},"));
+    }
+}

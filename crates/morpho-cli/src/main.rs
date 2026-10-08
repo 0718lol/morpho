@@ -82,6 +82,42 @@ enum PdfOp {
         #[arg(short = 'p', long)]
         password: Option<String>,
     },
+    /// rotate pages (90/180/270 degrees)
+    Rotate {
+        input: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+        /// rotation degrees: 90, 180 or 270
+        #[arg(short = 'd', long)]
+        degrees: u32,
+        /// pages to rotate, e.g. "1-3" or "1,4" (default: all)
+        #[arg(short = 'p', long)]
+        pages: Option<String>,
+    },
+    /// delete pages, e.g. --pages 1,3-5
+    Delete {
+        input: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+        /// pages to delete, comma-separated, ranges with -
+        #[arg(short = 'p', long)]
+        pages: String,
+    },
+    /// reorder pages, e.g. --order 3,1,2
+    Reorder {
+        input: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+        /// desired page sequence, comma-separated
+        #[arg(long)]
+        order: String,
+    },
+    /// shrink file size (recompress streams, optimize images)
+    Compress {
+        input: PathBuf,
+        #[arg(short, long)]
+        out: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -201,6 +237,22 @@ async fn run_pdf(op: PdfOp) -> Result<(), Box<dyn std::error::Error>> {
         PdfOp::Decrypt { input, out, password } => {
             morpho_engine::pdfs::decrypt(&qpdf, &input, &out, password.as_deref()).await?;
             println!("decrypted -> {}", out.display());
+        }
+        PdfOp::Rotate { input, out, degrees, pages } => {
+            morpho_engine::pdfs::rotate(&qpdf, &input, &out, degrees, pages.as_deref()).await?;
+            println!("rotated -> {}", out.display());
+        }
+        PdfOp::Delete { input, out, pages } => {
+            morpho_engine::pdfs::delete_pages(&qpdf, &input, &out, &pages).await?;
+            println!("deleted pages -> {}", out.display());
+        }
+        PdfOp::Reorder { input, out, order } => {
+            morpho_engine::pdfs::reorder(&qpdf, &input, &out, &order).await?;
+            println!("reordered -> {}", out.display());
+        }
+        PdfOp::Compress { input, out } => {
+            morpho_engine::pdfs::compress(&qpdf, &input, &out).await?;
+            println!("compressed -> {}", out.display());
         }
     }
     Ok(())
