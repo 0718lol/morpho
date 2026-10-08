@@ -70,6 +70,7 @@ npm install
 python scripts/fetch_engines.py   # 下载 FFmpeg/LibreOffice/Poppler/Tesseract/Pandoc/qpdf 到 engines/
 npm run tauri build               # 产出 NSIS 安装包
 npm run tauri dev                 # 开发模式
+bash scripts/e2e_test.sh          # E2E 回归测试（29 条转换链路）
 ```
 
 macOS：`fetch_engines.py` 是 Windows 引擎包，mac 上自备引擎（`brew install ffmpeg poppler tesseract pandoc qpdf`，LibreOffice 装好后软链 `ln -s /Applications/LibreOffice.app/Contents/MacOS/soffice engines/libreoffice/program/soffice`，按 `engines/` 目录布局摆放），然后：
@@ -137,6 +138,7 @@ See the matrix and CLI examples above. Build from source:
 npm install
 python scripts/fetch_engines.py
 npm run tauri build
+bash scripts/e2e_test.sh   # E2E regression suite (29 pipelines)
 ```
 
 macOS: fetch_engines.py fetches Windows engines — install your own instead

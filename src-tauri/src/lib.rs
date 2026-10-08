@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -26,6 +27,9 @@ struct AppState {
     engine: Arc<JobEngine>,
     settings: Mutex<Settings>,
     history: Mutex<Vec<HistoryEntry>>,
+    /// Parameters per in-flight job, keyed by job id; consumed on Done so the
+    /// history entry keeps everything needed to re-run the conversion.
+    job_params: Mutex<HashMap<u64, JobOptions>>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -41,6 +45,10 @@ struct HistoryEntry {
     archived: bool,
     #[serde(default)]
     archived_at: Option<String>,
+    /// Conversion parameters snapshot for "convert again"; None for entries
+    /// recorded before this field existed.
+    #[serde(default)]
+    params: Option<JobOptions>,
 }
 
 /// The app data dir is not auto-created by anything else; every write below
@@ -100,7 +108,9 @@ async fn submit_jobs(
             quality,
             preset: preset.clone(),
         };
-        ids.push(state.engine.submit(PathBuf::from(f), opts));
+        let job_id = state.engine.submit(PathBuf::from(f), opts.clone());
+        state.job_params.lock().unwrap().insert(job_id, opts);
+        ids.push(job_id);
     }
     Ok(ids)
 }
@@ -217,6 +227,36 @@ fn purge_history(app: AppHandle, state: State<AppState>, id: u64) -> Result<(), 
     Ok(())
 }
 
+/// Re-run a history entry: same source file, same conversion parameters.
+#[tauri::command]
+fn reconvert(state: State<'_, AppState>, id: u64) -> Result<u64, String> {
+    let entry = state
+        .history
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|e| e.id == id)
+        .cloned()
+        .ok_or_else(|| format!("no history entry #{id}"))?;
+    if entry.source.is_empty() {
+        return Err("history entry has no source path (recorded before v0.1.2)".into());
+    }
+    let source = PathBuf::from(&entry.source);
+    if !source.exists() {
+        return Err(format!("source file no longer exists: {}", entry.source));
+    }
+    let opts = match entry.params.clone() {
+        Some(p) => p,
+        None => JobOptions {
+            target: entry.target.parse().map_err(|e: String| e)?,
+            output_dir: None,
+            quality: None,
+            preset: None,
+        },
+    };
+    Ok(state.engine.submit(source, opts))
+}
+
 /// Reveal a file in Explorer / Finder.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -303,10 +343,19 @@ pub fn run() {
                             }
                             JobEvent::Done { id, output } => {
                                 let source = sources.remove(id).unwrap_or_default();
-                                append_history(&emitter, output, &source);
+                                let params = emitter.try_state::<AppState>().and_then(|s| {
+                                    let mut m = s.job_params.lock().ok()?;
+                                    m.remove(id)
+                                });
+                                append_history(&emitter, output, &source, params);
                             }
                             JobEvent::Failed { id, .. } | JobEvent::Cancelled { id } => {
                                 sources.remove(id);
+                                if let Some(s) = emitter.try_state::<AppState>() {
+                                    if let Ok(mut m) = s.job_params.lock() {
+                                        m.remove(id);
+                                    }
+                                }
                             }
                             _ => {}
                         }
@@ -319,6 +368,7 @@ pub fn run() {
                 engine,
                 settings: Mutex::new(settings),
                 history: Mutex::new(history),
+                job_params: Mutex::new(HashMap::new()),
             });
             Ok(())
         })
@@ -336,13 +386,19 @@ pub fn run() {
             archive_history,
             restore_history,
             purge_history,
+            reconvert,
             reveal
         ])
         .run(tauri::generate_context!())
         .expect("error while running Morpho");
 }
 
-fn append_history(app: &AppHandle, output: &std::path::Path, source: &str) {
+fn append_history(
+    app: &AppHandle,
+    output: &std::path::Path,
+    source: &str,
+    params: Option<JobOptions>,
+) {
     let entry = HistoryEntry {
         id: 0, // assigned below from the in-memory list
         source: source.to_string(),
@@ -355,6 +411,7 @@ fn append_history(app: &AppHandle, output: &std::path::Path, source: &str) {
         when: chrono_like_now(),
         archived: false,
         archived_at: None,
+        params,
     };
     if let Some(state) = app.try_state::<AppState>() {
         let mut history = state.history.lock().unwrap();

@@ -113,6 +113,7 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
 
             let total = ids.len();
             let mut done = 0usize;
+            let mut failed = 0usize;
             while done < total {
                 if let Ok(ev) = rx.recv().await {
                     match ev {
@@ -130,6 +131,7 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         JobEvent::Failed { id, error } => {
                             done += 1;
+                            failed += 1;
                             println!("\r[{id}] FAILED: {error}");
                         }
                         JobEvent::Cancelled { id } => {
@@ -141,6 +143,11 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             let _ = ids;
+            if failed > 0 {
+                // propagate job failures to the exit code so scripts and CI
+                // can tell success from failure
+                std::process::exit(1);
+            }
             Ok(())
         }
         Command::Formats { source } => match source {

@@ -338,6 +338,7 @@ interface HistoryEntry {
   when: string;
   archived?: boolean;
   archived_at?: string | null;
+  params?: unknown;
 }
 
 type HistoryView = "recent" | "archive";
@@ -372,6 +373,22 @@ async function renderHistory() {
     el.appendChild(open);
 
     if (historyView === "recent") {
+      if (h.source) {
+        const again = document.createElement("button");
+        again.className = "ghost-btn small";
+        again.textContent = t("reconvert");
+        again.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          try {
+            await invoke("reconvert", { id: h.id });
+            queueSection.classList.remove("hidden");
+            status(t("reconvertQueued"));
+          } catch (err) {
+            status(`${t("reconvertFail")}: ${err}`);
+          }
+        });
+        el.appendChild(again);
+      }
       const del = document.createElement("button");
       del.className = "ghost-btn small";
       del.textContent = t("archiveAction");
