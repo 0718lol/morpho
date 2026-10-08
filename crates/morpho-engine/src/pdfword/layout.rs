@@ -42,6 +42,8 @@ pub enum Block {
     Para(Para),
     Image(ImagePara),
     Table { y: f32, rows: Vec<Vec<String>> },
+    /// Table with per-cell column spans from grid detection.
+    GridTable { y: f32, rows: Vec<Vec<(String, usize)>> },
 }
 
 #[derive(Debug, Default)]
@@ -309,6 +311,18 @@ pub fn reflow(
     token: &CancellationToken,
     report: &mut (dyn FnMut(f32, &str) + Send),
 ) -> Result<Flow> {
+    reflow_with_grids(doc, Vec::new(), token, report)
+}
+
+/// Re-flow with per-page ruling-line grids from the rendered page. Pages
+/// with a detected grid slice their text into grid cells (supporting merged
+/// cells); the rest keep the column-alignment heuristics.
+pub fn reflow_with_grids(
+    doc: PdfDoc,
+    grids: Vec<super::grid::GridTable>,
+    token: &CancellationToken,
+    report: &mut (dyn FnMut(f32, &str) + Send),
+) -> Result<Flow> {
     let total = doc.pages.len().max(1);
 
     // body size: char-weighted mode of line sizes across the document
@@ -339,13 +353,60 @@ pub fn reflow(
             0.25 + 0.5 * (idx as f32 + 1.0) / total as f32,
             &format!("page {}/{}", idx + 1, total),
         );
-        flow.pages.push(reflow_page(page, body_size));
+        let grid = grids.get(idx);
+        flow.pages.push(reflow_page(page, body_size, grid));
     }
     Ok(flow)
 }
 
-fn reflow_page(page: super::parser::Page, body_size: f32) -> PageFlow {
-    let lines = build_lines(page.chunks);
+fn reflow_page(
+    page: super::parser::Page,
+    body_size: f32,
+    grid: Option<&super::grid::GridTable>,
+) -> PageFlow {
+    let mut grid_tables: Vec<(f32, Vec<Vec<(String, usize)>>)> = Vec::new();
+    let mut grid_chunks: Vec<super::parser::TextChunk> = Vec::new();
+    if let Some(g) = grid {
+        if g.ys.len() >= 2 && g.xs.len() >= 2 {
+            // chunks inside the ruled region belong to the table
+            let y_top = g.ys[0];
+            let y_bot = *g.ys.last().unwrap();
+            let x_left = g.xs[0];
+            let x_right = *g.xs.last().unwrap();
+            for c in &page.chunks {
+                let cy = c.y + c.h / 2.0;
+                let cx = c.x + c.w / 2.0;
+                if cy >= y_top && cy <= y_bot && cx >= x_left && cx <= x_right {
+                    grid_chunks.push(c.clone());
+                }
+            }
+            if !grid_chunks.is_empty() {
+                let rows = super::grid::slice_chunks(g, &grid_chunks);
+                if !rows.is_empty() {
+                    let tuple_rows: Vec<Vec<(String, usize)>> = rows
+                        .into_iter()
+                        .map(|row| {
+                            row.into_iter()
+                                .map(|cell| (cell.text, cell.span))
+                                .collect()
+                        })
+                        .collect();
+                    grid_tables.push((y_top, tuple_rows));
+                }
+            }
+        }
+    }
+    let inside: Vec<super::parser::TextChunk> = grid_chunks;
+    let rest: Vec<super::parser::TextChunk> = page
+        .chunks
+        .into_iter()
+        .filter(|c| {
+            !inside
+                .iter()
+                .any(|g| g.x == c.x && g.y == c.y && g.w == c.w)
+        })
+        .collect();
+    let lines = build_lines(rest);
     let (tables, lines) = extract_tables(lines);
 
     // body left edge: most common line x0 (2pt buckets)
@@ -448,6 +509,9 @@ fn reflow_page(page: super::parser::Page, body_size: f32) -> PageFlow {
     for (y, rows) in tables {
         blocks.push(Block::Table { y, rows });
     }
+    for (y, rows) in grid_tables {
+        blocks.push(Block::GridTable { y, rows });
+    }
     blocks.sort_by_key_order();
     PageFlow { blocks }
 }
@@ -458,6 +522,7 @@ impl Block {
             Block::Para(p) => p.y,
             Block::Image(i) => i.y,
             Block::Table { y, .. } => *y,
+        Block::GridTable { y, .. } => *y,
         }
     }
 }

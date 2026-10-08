@@ -98,6 +98,14 @@ pub fn emit_docx(flow: &Flow, dst: &Path) -> Result<()> {
                     docx = docx.add_table(table);
                     docx = docx.add_paragraph(Paragraph::new());
                 }
+                Block::GridTable { rows, .. } => {
+                    if page_break {
+                        docx = docx.add_paragraph(Paragraph::new().page_break_before(true));
+                    }
+                    let table = build_grid_table(rows);
+                    docx = docx.add_table(table);
+                    docx = docx.add_paragraph(Paragraph::new());
+                }
             }
         }
     }
@@ -131,6 +139,39 @@ fn build_table(rows: &[Vec<String>]) -> Table {
                         TableCell::new().add_paragraph(
                             Paragraph::new().add_run(Run::new().add_text(text)),
                         )
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    Table::new(trows).set_borders(borders)
+}
+
+/// Grid-detected table: each cell carries its column span so merged cells
+/// render as real w:gridSpan in Word.
+fn build_grid_table(rows: &[Vec<(String, usize)>]) -> Table {
+    let border = |pos: TableBorderPosition| TableBorder::new(pos).size(4).color("999999");
+    let borders = TableBorders::new()
+        .set(border(TableBorderPosition::Top))
+        .set(border(TableBorderPosition::Bottom))
+        .set(border(TableBorderPosition::Left))
+        .set(border(TableBorderPosition::Right))
+        .set(border(TableBorderPosition::InsideH))
+        .set(border(TableBorderPosition::InsideV));
+    let trows: Vec<TableRow> = rows
+        .iter()
+        .map(|cells| {
+            TableRow::new(
+                cells
+                    .iter()
+                    .map(|(text, span)| {
+                        let mut cell = TableCell::new().add_paragraph(
+                            Paragraph::new().add_run(Run::new().add_text(text)),
+                        );
+                        if *span > 1 {
+                            cell = cell.grid_span(*span);
+                        }
+                        cell
                     })
                     .collect(),
             )
