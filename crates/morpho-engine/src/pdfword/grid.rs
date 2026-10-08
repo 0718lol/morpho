@@ -125,7 +125,13 @@ fn detect_page_grid(img: &DynamicImage) -> Option<GridTable> {
 }
 
 /// Render the pdf at ~100 dpi and detect ruling-line grids page by page.
-pub async fn detect_grids(pdftoppm: &Path, src: &Path) -> Result<Vec<GridTable>> {
+/// Returns ONE entry per page (None where no grid was detected) so callers
+/// can index by page number — a compact list would shift grids onto the
+/// wrong pages whenever an earlier page has no table.
+pub async fn detect_grids(
+    pdftoppm: &Path,
+    src: &Path,
+) -> Result<Vec<Option<GridTable>>> {
     let tmp = tempfile::tempdir()?;
     let pages = crate::pdfs::pdf_to_images(
         pdftoppm,
@@ -142,9 +148,7 @@ pub async fn detect_grids(pdftoppm: &Path, src: &Path) -> Result<Vec<GridTable>>
             .map_err(|e| Error::Other(format!("grid render open: {e}")))?
             .decode()
             .map_err(|e| Error::Other(format!("grid render decode: {e}")))?;
-        if let Some(g) = detect_page_grid(&img) {
-            out.push(g);
-        }
+        out.push(detect_page_grid(&img));
     }
     Ok(out)
 }

@@ -319,7 +319,7 @@ pub fn reflow(
 /// cells); the rest keep the column-alignment heuristics.
 pub fn reflow_with_grids(
     doc: PdfDoc,
-    grids: Vec<super::grid::GridTable>,
+    grids: Vec<Option<super::grid::GridTable>>,
     token: &CancellationToken,
     report: &mut (dyn FnMut(f32, &str) + Send),
 ) -> Result<Flow> {
@@ -353,7 +353,7 @@ pub fn reflow_with_grids(
             0.25 + 0.5 * (idx as f32 + 1.0) / total as f32,
             &format!("page {}/{}", idx + 1, total),
         );
-        let grid = grids.get(idx);
+        let grid = grids.get(idx).and_then(|g| g.as_ref());
         flow.pages.push(reflow_page(page, body_size, grid));
     }
     Ok(flow)
