@@ -2419,7 +2419,7 @@ dependencies = [
 
 [[package]]
 name = "morpho-app"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -2434,7 +2434,7 @@ dependencies = [
 
 [[package]]
 name = "morpho-cli"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "clap",
  "morpho-engine",
@@ -2443,7 +2443,7 @@ dependencies = [
 
 [[package]]
 name = "morpho-engine"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "docx-rs",
