@@ -16,6 +16,11 @@ pub struct GridTable {
     pub ys: Vec<f32>,
     /// x of each vertical ruling line, ascending
     pub xs: Vec<f32>,
+    /// For each row band and each vertical line index: the fraction of the
+    /// band height where the line is inked. A merged cell shows a gap here —
+    /// this is what distinguishes a real merged cell from a text chunk whose
+    /// bounding box merely overflows into neighbouring columns.
+    pub vline_fill: Vec<Vec<f32>>,
 }
 
 /// A cell produced by grid slicing: text plus the number of columns it spans.
@@ -105,22 +110,68 @@ fn detect_page_grid(img: &DynamicImage) -> Option<GridTable> {
     if y_bot <= y_top + 20 {
         return None;
     }
-    let min_col = (y_bot - y_top) * 70 / 100;
+    // Vertical ruling lines are detected PER ROW BAND, not across the whole
+    // table: a line interrupted by a merged cell, or one that exists only in
+    // some rows, never reaches a whole-table threshold and the column boundary
+    // would be lost. The union of all band line positions forms the columns.
+    let n_bands_pre = ys_px.len() - 1;
     let mut vcols: Vec<usize> = Vec::new();
-    for x in 0..w {
-        let col: Vec<u8> = (y_top..y_bot).map(|y| px[y * w + x]).collect();
-        if longest_dark_run(&col).1 >= min_col {
-            vcols.push(x);
+    for r in 0..n_bands_pre {
+        let ya = ys_px[r] as usize;
+        let yb = ys_px[r + 1] as usize;
+        if yb <= ya + 4 {
+            continue; // degenerate band
+        }
+        let min_col = (yb - ya) * 70 / 100;
+        for x in 0..w {
+            let col: Vec<u8> = (ya..yb).map(|y| px[y * w + x]).collect();
+            if longest_dark_run(&col).1 >= min_col {
+                vcols.push(x);
+            }
         }
     }
+    // the per-band union must be sorted and deduplicated before collapsing:
+    // raw concatenation leaves duplicated/unsorted positions and the column
+    // structure degenerates into a pile of phantom lines
+    vcols.sort();
+    vcols.dedup();
     let xs_px = collapse(vcols);
     if xs_px.len() < MIN_V_LINES {
         return None;
+    }
+    // Per (row band, vertical line): how much of the band the line covers.
+    // Outer borders always count as present; interior lines are measured —
+    // a merged cell leaves its interior border lines un-inked.
+    let n_bands = ys_px.len() - 1;
+    let mut vline_fill = vec![vec![1.0f32; xs_px.len()]; n_bands];
+    for (bi, &x) in xs_px.iter().enumerate() {
+        if bi == 0 || bi + 1 == xs_px.len() {
+            continue;
+        }
+        let xi = x as usize;
+        if xi >= w {
+            continue;
+        }
+        for r in 0..n_bands {
+            let ya = ys_px[r] as usize;
+            let yb = ys_px[r + 1] as usize;
+            if yb <= ya {
+                continue;
+            }
+            let mut dark = 0usize;
+            for y in ya..yb {
+                if px[y * w + xi] < DARK {
+                    dark += 1;
+                }
+            }
+            vline_fill[r][bi] = dark as f32 / (yb - ya) as f32;
+        }
     }
     let scale = 72.0 / 100.0; // rendered at ~100 dpi, back to PDF points
     Some(GridTable {
         ys: ys_px.iter().map(|v| v * scale).collect(),
         xs: xs_px.iter().map(|v| v * scale).collect(),
+        vline_fill,
     })
 }
 
@@ -182,15 +233,37 @@ pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<Vec<GridCell>
             }
             cur_row = Some(ri);
         }
-        let x0 = c.x;
-        let x1 = c.x + c.w;
-        let covered: Vec<usize> = (0..ncols)
-            .filter(|&ci| x1 > grid.xs[ci] + 1.0 && x0 < grid.xs[ci + 1] - 1.0)
-            .collect();
-        if covered.is_empty() {
-            continue;
+        // Cell boundaries in this row band: the outer borders plus every
+        // interior line that is inked here. An un-inked interior line is
+        // exactly where cells were merged, so the band partitions into
+        // regions and the chunk lands in the region containing its centre;
+        // the region width in grid columns becomes the cell span. This is
+        // robust against text bounding boxes that overflow into neighbouring
+        // columns: the centre decides, not the box edges.
+        let mut bounds: Vec<f32> = vec![grid.xs[0]];
+        for bi in 1..grid.xs.len() - 1 {
+            let inked = grid
+                .vline_fill
+                .get(ri)
+                .and_then(|v| v.get(bi).copied())
+                .unwrap_or(1.0)
+                >= 0.5;
+            if inked {
+                bounds.push(grid.xs[bi]);
+            }
         }
-        let first = covered[0];
+        bounds.push(*grid.xs.last().unwrap());
+        let cx = c.x + c.w / 2.0;
+        let region = match bounds.windows(2).position(|w| cx >= w[0] && cx < w[1]) {
+            Some(r) => r,
+            None => continue, // centre outside the ruled region
+        };
+        // grid-column index of a boundary line
+        let col_of = |x: f32| -> usize {
+            grid.xs.iter().rposition(|&gx| gx <= x + 0.5).unwrap_or(0)
+        };
+        let first = col_of(bounds[region]);
+        let span = col_of(bounds[region + 1]) - first;
         let filled: usize = row_cells.iter().map(|c| c.span).sum();
         if first < filled {
             // same cell as the previous chunk: append the text
@@ -205,7 +278,7 @@ pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<Vec<GridCell>
         for _ in filled..first {
             row_cells.push(GridCell { text: String::new(), span: 1 });
         }
-        row_cells.push(GridCell { text: c.text(), span: covered.len() });
+        row_cells.push(GridCell { text: c.text(), span });
     }
     if !row_cells.is_empty() {
         let filled: usize = row_cells.iter().map(|c| c.span).sum();
@@ -240,9 +313,15 @@ mod tests {
 
     #[test]
     fn slices_cells_and_merged_span() {
+        // row band 0 has un-inked interior borders (merged header);
+        // row band 1 has all borders inked (normal cells)
         let grid = GridTable {
             ys: vec![100.0, 120.0, 140.0],
             xs: vec![50.0, 150.0, 250.0, 350.0],
+            vline_fill: vec![
+                vec![1.0, 0.0, 0.0, 1.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+            ],
         };
         let chunks = vec![
             chunk(60.0, 105.0, 260.0, 10.0, "Merged Header"),
@@ -261,10 +340,33 @@ mod tests {
     }
 
     #[test]
+    fn overflowing_chunk_with_inked_border_is_not_merged() {
+        // a whole header row emitted as ONE text run spanning 3 columns,
+        // but the interior borders are inked -> normal cell, span = 1
+        let grid = GridTable {
+            ys: vec![100.0, 120.0, 140.0],
+            xs: vec![50.0, 150.0, 250.0, 350.0],
+            vline_fill: vec![
+                vec![1.0, 1.0, 1.0, 1.0],
+                vec![1.0, 1.0, 1.0, 1.0],
+            ],
+        };
+        let chunks = vec![chunk(60.0, 105.0, 260.0, 10.0, "Region Q1 Q2")];
+        let rows = slice_chunks(&grid, &chunks);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].len(), 3);
+        assert_eq!(rows[0][1].text, "Region Q1 Q2");
+        assert_eq!(rows[0][1].span, 1);
+        assert_eq!(rows[0][0].text, "");
+        assert_eq!(rows[0][2].text, "");
+    }
+
+    #[test]
     fn ignores_chunks_outside_grid() {
         let grid = GridTable {
             ys: vec![100.0, 120.0],
             xs: vec![50.0, 150.0],
+            vline_fill: vec![vec![1.0, 1.0]],
         };
         let chunks = vec![
             chunk(60.0, 105.0, 40.0, 10.0, "in"),
