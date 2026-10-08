@@ -5,6 +5,8 @@ use morpho_engine::format::Format;
 use morpho_engine::queue::{JobEngine, JobEvent, JobOptions};
 use morpho_engine::route;
 
+mod serve;
+
 #[derive(Parser)]
 #[command(
     name = "morpho",
@@ -48,6 +50,12 @@ enum Command {
     Pdf {
         #[command(subcommand)]
         op: PdfOp,
+    },
+    /// start a local HTTP API server (binds 127.0.0.1 only)
+    Serve {
+        /// port to listen on
+        #[arg(short, long, default_value_t = 8080)]
+        port: u16,
     },
 }
 
@@ -211,6 +219,7 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Command::Pdf { op } => run_pdf(op).await,
+        Command::Serve { port } => serve::run(port).await,
     }
 }
 

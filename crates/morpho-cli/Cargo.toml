@@ -13,3 +13,6 @@ path = "src/main.rs"
 morpho-engine = { path = "../morpho-engine" }
 tokio = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+axum = "0.8"
+serde = { workspace = true }
+serde_json = { workspace = true }

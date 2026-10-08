@@ -64,6 +64,7 @@ morpho pdf rotate in.pdf -o out.pdf -d 90      # 旋转页面（90/180/270）
 morpho pdf delete in.pdf -o out.pdf -p 1,3-5   # 删除页面
 morpho pdf reorder in.pdf -o out.pdf --order 3,1,2  # 重排页面
 morpho pdf compress in.pdf -o out.pdf         # 压缩体积
+morpho serve --port 8080                      # 本地 HTTP API（仅绑定 127.0.0.1）
 ```
 
 ## 从源码构建
@@ -82,6 +83,23 @@ macOS：`fetch_engines.py` 是 Windows 引擎包，mac 上自备引擎（`brew i
 ```bash
 ./scripts/build_mac.sh            # 产出瘦版 Morpho.app（引擎不入包体）
 ./scripts/build_mac.sh --desktop  # 顺手拷到桌面
+```
+
+## 本地 HTTP API
+
+morpho serve 在本机启动一个 JSON API（仅绑定 127.0.0.1，供脚本和本地应用调用，不对外暴露）：
+
+```bash
+morpho serve --port 8080
+# 提交转换
+curl -X POST localhost:8080/convert -d @request.json
+# 查询任务
+curl localhost:8080/jobs/1
+# 取消
+curl -X POST localhost:8080/jobs/1/cancel
+# 格式矩阵 / 引擎状态
+curl localhost:8080/formats
+curl localhost:8080/engines
 ```
 
 ## 架构
