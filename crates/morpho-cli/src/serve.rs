@@ -126,6 +126,17 @@ async fn get_job(
 }
 
 async fn cancel_job(State(state): State<AppState>, Path(id): Path<u64>) -> Json<serde_json::Value> {
+    {
+        let jobs = state.jobs.lock().unwrap();
+        match jobs.get(&id) {
+            None => return Json(json!({ "error": format!("no job #{id}") })),
+            Some(j) => {
+                if j.status != "queued" && j.status != "running" {
+                    return Json(json!({ "error": format!("job #{id} already {}", j.status) }));
+                }
+            }
+        }
+    }
     state.engine.cancel(id);
     Json(json!({ "cancelled": id }))
 }
