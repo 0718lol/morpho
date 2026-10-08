@@ -100,6 +100,11 @@ t pdf-split   sh -c "$BIN pdf split merged.pdf --out pages >/dev/null 2>&1 && [ 
 t pdf-encrypt "$BIN" pdf encrypt doc.pdf --out secret.pdf -p pw123
 t pdf-decrypt sh -c "$BIN pdf decrypt secret.pdf --out plain.pdf -p pw123 >/dev/null 2>&1 && $BIN convert plain.pdf --to txt --out out2 >/dev/null 2>&1 && grep -q Hello out2/plain.txt"
 
+t pdf-rotate   sh -c "$BIN pdf rotate merged.pdf --out rot.pdf -d 90 >/dev/null 2>&1 && [ -s rot.pdf ]"
+t pdf-delete   sh -c "$BIN pdf delete merged.pdf --out del.pdf -p 1 >/dev/null 2>&1 && [ -s del.pdf ]"
+t pdf-reorder  sh -c "$BIN pdf reorder merged.pdf --out reo.pdf --order 2,1 >/dev/null 2>&1 && [ -s reo.pdf ]"
+t pdf-compress sh -c "$BIN pdf compress merged.pdf --out comp.pdf >/dev/null 2>&1 && [ -s comp.pdf ]"
+
 # ---------- pdf tables (grid detection; needs libreoffice) ----------
 if [ -n "$SOFFICE" ]; then
   echo "== pdf tables =="

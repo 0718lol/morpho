@@ -60,6 +60,10 @@ morpho engines                               # 检查引擎状态
 morpho pdf merge a.pdf b.pdf -o merged.pdf   # PDF 工具
 morpho pdf split book.pdf -o pages/
 morpho pdf encrypt secret.pdf -p 密码
+morpho pdf rotate in.pdf -o out.pdf -d 90      # 旋转页面（90/180/270）
+morpho pdf delete in.pdf -o out.pdf -p 1,3-5   # 删除页面
+morpho pdf reorder in.pdf -o out.pdf --order 3,1,2  # 重排页面
+morpho pdf compress in.pdf -o out.pdf         # 压缩体积
 ```
 
 ## 从源码构建
