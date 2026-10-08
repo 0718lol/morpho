@@ -39,7 +39,7 @@ pub enum JobEvent {
     Started { id: u64 },
     Progress { id: u64, ratio: f32, note: String },
     Done { id: u64, output: PathBuf },
-    Failed { id: u64, error: String },
+    Failed { id: u64, error: String, hint: String },
     Cancelled { id: u64 },
 }
 
@@ -134,7 +134,11 @@ impl JobEngine {
         match result {
             Ok(output) => self.emit(JobEvent::Done { id, output }),
             Err(Error::Cancelled) => self.emit(JobEvent::Cancelled { id }),
-            Err(e) => self.emit(JobEvent::Failed { id, error: e.to_string() }),
+            Err(e) => self.emit(JobEvent::Failed {
+                id,
+                error: e.to_string(),
+                hint: e.hint_key().to_string(),
+            }),
         }
     }
 

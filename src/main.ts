@@ -28,6 +28,7 @@ interface JobView {
   note: string;
   output?: string;
   error?: string;
+  hint?: string;
 }
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector<T>(sel)!;
@@ -299,7 +300,7 @@ function renderQueue() {
     const pct = Math.round(job.ratio * 100);
     const statusLabel =
       job.status === "done" ? `✔ ${t("done")}` :
-      job.status === "failed" ? `✖ ${t("failed")}${job.error ? ` — ${job.error}` : ""}` :
+      job.status === "failed" ? `✖ ${t("failed")}${job.hint ? ` — ${t(job.hint)}` : job.error ? ` — ${job.error}` : ""}` :
       job.status === "cancelled" ? t("cancelled") :
       job.status === "queued" ? t("waiting") :
       `${t("converting")} ${pct}%${job.note ? ` — ${job.note}` : ""}`;
@@ -307,7 +308,7 @@ function renderQueue() {
       <span class="job-name" title="${escapeHtml(job.name)}">${escapeHtml(job.name)}</span>
       <span class="job-target">${escapeHtml(job.target)}</span>
       <div class="job-bar"><div class="fill" style="width:${job.status === "done" ? 100 : pct}%"></div></div>
-      <span class="job-status" title="${escapeHtml(statusLabel)}">${escapeHtml(statusLabel)}</span>`;
+      <span class="job-status" title="${escapeHtml(job.error || statusLabel)}">${escapeHtml(statusLabel)}</span>`;
     const action = document.createElement("button");
     action.className = "job-action";
     if (job.status === "done" && job.output) {
@@ -627,6 +628,7 @@ async function bindJobEvents() {
       case "failed":
         job.status = "failed";
         job.error = p.error ?? "";
+        job.hint = p.hint ?? "";
         break;
       case "cancelled":
         job.status = "cancelled";

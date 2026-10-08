@@ -129,7 +129,7 @@ async fn run(cli: Command) -> Result<(), Box<dyn std::error::Error>> {
                             done += 1;
                             println!("\r[{id}] done     -> {}", output.display());
                         }
-                        JobEvent::Failed { id, error } => {
+                        JobEvent::Failed { id, error, .. } => {
                             done += 1;
                             failed += 1;
                             println!("\r[{id}] FAILED: {error}");
