@@ -254,7 +254,11 @@ fn reconvert(state: State<'_, AppState>, id: u64) -> Result<u64, String> {
             preset: None,
         },
     };
-    Ok(state.engine.submit(source, opts))
+    let job_id = state.engine.submit(source, opts.clone());
+    // register the params so the re-run own history entry keeps the full
+    // snapshot — otherwise a second convert-again would lose them
+    state.job_params.lock().unwrap().insert(job_id, opts);
+    Ok(job_id)
 }
 
 /// Reveal a file in Explorer / Finder.
