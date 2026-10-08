@@ -147,9 +147,10 @@ fn build_table(rows: &[Vec<String>]) -> Table {
     Table::new(trows).set_borders(borders)
 }
 
-/// Grid-detected table: each cell carries its column span so merged cells
-/// render as real w:gridSpan in Word.
-fn build_grid_table(rows: &[Vec<(String, usize)>]) -> Table {
+/// Grid-detected table: each cell carries its column span plus a vertical
+/// merge flag (0 none, 1 restart, 2 continue) so merged cells render as real
+/// w:gridSpan / w:vMerge in Word.
+fn build_grid_table(rows: &[Vec<(String, usize, u8)>]) -> Table {
     let border = |pos: TableBorderPosition| TableBorder::new(pos).size(4).color("999999");
     let borders = TableBorders::new()
         .set(border(TableBorderPosition::Top))
@@ -164,12 +165,18 @@ fn build_grid_table(rows: &[Vec<(String, usize)>]) -> Table {
             TableRow::new(
                 cells
                     .iter()
-                    .map(|(text, span)| {
-                        let mut cell = TableCell::new().add_paragraph(
-                            Paragraph::new().add_run(Run::new().add_text(text)),
-                        );
+                    .map(|(text, span, vm)| {
+                        let mut cell = TableCell::new();
+                        if *vm != 2 {
+                            cell = cell.add_paragraph(Paragraph::new().add_run(Run::new().add_text(text)));
+                        }
                         if *span > 1 {
                             cell = cell.grid_span(*span);
+                        }
+                        match vm {
+                            1 => cell = cell.vertical_merge(VMergeType::Restart),
+                            2 => cell = cell.vertical_merge(VMergeType::Continue),
+                            _ => {}
                         }
                         cell
                     })

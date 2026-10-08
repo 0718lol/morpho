@@ -21,6 +21,9 @@ pub struct GridTable {
     /// this is what distinguishes a real merged cell from a text chunk whose
     /// bounding box merely overflows into neighbouring columns.
     pub vline_fill: Vec<Vec<f32>>,
+    /// For each horizontal line index and each column band: the fraction of
+    /// the line width inked. Un-inked segments mark vertically merged cells.
+    pub hline_fill: Vec<Vec<f32>>,
 }
 
 /// A cell produced by grid slicing: text plus the number of columns it spans.
@@ -167,11 +170,39 @@ fn detect_page_grid(img: &DynamicImage) -> Option<GridTable> {
             vline_fill[r][bi] = dark as f32 / (yb - ya) as f32;
         }
     }
+    // Horizontal-line ink per column band: an un-inked interior segment
+    // marks a vertically merged cell (rowspan).
+    let n_cols = xs_px.len() - 1;
+    let mut hline_fill = vec![vec![1.0f32; n_cols]; ys_px.len()];
+    for (li, &y) in ys_px.iter().enumerate() {
+        if li == 0 || li + 1 == ys_px.len() {
+            continue;
+        }
+        let yi = y as usize;
+        if yi >= h {
+            continue;
+        }
+        for ci in 0..n_cols {
+            let xa = xs_px[ci] as usize;
+            let xb = xs_px[ci + 1] as usize;
+            if xb <= xa {
+                continue;
+            }
+            let mut dark = 0usize;
+            for x in xa..xb {
+                if px[yi * w + x] < DARK {
+                    dark += 1;
+                }
+            }
+            hline_fill[li][ci] = dark as f32 / (xb - xa) as f32;
+        }
+    }
     let scale = 72.0 / 100.0; // rendered at ~100 dpi, back to PDF points
     Some(GridTable {
         ys: ys_px.iter().map(|v| v * scale).collect(),
         xs: xs_px.iter().map(|v| v * scale).collect(),
         vline_fill,
+        hline_fill,
     })
 }
 
@@ -205,10 +236,11 @@ pub async fn detect_grids(
 }
 
 /// Slice text chunks into grid cells. A chunk spanning more than one column
-/// band becomes a merged cell (span > 1).
-pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<Vec<GridCell>> {
+/// band becomes a merged cell (span > 1). Each row carries its grid band
+/// index so callers can consult per-band line data.
+pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<(usize, Vec<GridCell>)> {
     let ncols = grid.xs.len() - 1;
-    let mut rows: Vec<Vec<GridCell>> = Vec::new();
+    let mut rows: Vec<(usize, Vec<GridCell>)> = Vec::new();
     let mut row_cells: Vec<GridCell> = Vec::new();
     let mut cur_row: Option<usize> = None;
 
@@ -229,7 +261,7 @@ pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<Vec<GridCell>
                 for _ in filled..ncols {
                     row_cells.push(GridCell { text: String::new(), span: 1 });
                 }
-                rows.push(std::mem::take(&mut row_cells));
+                rows.push((cur_row.unwrap_or(ri), std::mem::take(&mut row_cells)));
             }
             cur_row = Some(ri);
         }
@@ -285,7 +317,7 @@ pub fn slice_chunks(grid: &GridTable, chunks: &[TextChunk]) -> Vec<Vec<GridCell>
         for _ in filled..ncols {
             row_cells.push(GridCell { text: String::new(), span: 1 });
         }
-        rows.push(row_cells);
+        rows.push((cur_row.unwrap_or(0), row_cells));
     }
     rows
 }
@@ -322,6 +354,7 @@ mod tests {
                 vec![1.0, 0.0, 0.0, 1.0],
                 vec![1.0, 1.0, 1.0, 1.0],
             ],
+            hline_fill: vec![vec![1.0, 1.0, 1.0]; 3],
         };
         let chunks = vec![
             chunk(60.0, 105.0, 260.0, 10.0, "Merged Header"),
@@ -331,12 +364,14 @@ mod tests {
         ];
         let rows = slice_chunks(&grid, &chunks);
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0][0].span, 3);
-        assert_eq!(rows[0][0].text, "Merged Header");
-        assert_eq!(rows[1].len(), 3);
-        assert_eq!(rows[1][0].text, "Q1");
-        assert_eq!(rows[1][1].text, "120");
-        assert_eq!(rows[1][2].text, "good");
+        assert_eq!(rows[0].0, 0);
+        assert_eq!(rows[0].1[0].span, 3);
+        assert_eq!(rows[0].1[0].text, "Merged Header");
+        assert_eq!(rows[1].0, 1);
+        assert_eq!(rows[1].1.len(), 3);
+        assert_eq!(rows[1].1[0].text, "Q1");
+        assert_eq!(rows[1].1[1].text, "120");
+        assert_eq!(rows[1].1[2].text, "good");
     }
 
     #[test]
@@ -350,15 +385,16 @@ mod tests {
                 vec![1.0, 1.0, 1.0, 1.0],
                 vec![1.0, 1.0, 1.0, 1.0],
             ],
+            hline_fill: vec![vec![1.0, 1.0, 1.0]; 3],
         };
         let chunks = vec![chunk(60.0, 105.0, 260.0, 10.0, "Region Q1 Q2")];
         let rows = slice_chunks(&grid, &chunks);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].len(), 3);
-        assert_eq!(rows[0][1].text, "Region Q1 Q2");
-        assert_eq!(rows[0][1].span, 1);
-        assert_eq!(rows[0][0].text, "");
-        assert_eq!(rows[0][2].text, "");
+        assert_eq!(rows[0].1.len(), 3);
+        assert_eq!(rows[0].1[1].text, "Region Q1 Q2");
+        assert_eq!(rows[0].1[1].span, 1);
+        assert_eq!(rows[0].1[0].text, "");
+        assert_eq!(rows[0].1[2].text, "");
     }
 
     #[test]
@@ -367,6 +403,7 @@ mod tests {
             ys: vec![100.0, 120.0],
             xs: vec![50.0, 150.0],
             vline_fill: vec![vec![1.0, 1.0]],
+            hline_fill: vec![vec![1.0]; 2],
         };
         let chunks = vec![
             chunk(60.0, 105.0, 40.0, 10.0, "in"),
@@ -374,7 +411,7 @@ mod tests {
         ];
         let rows = slice_chunks(&grid, &chunks);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].len(), 1);
-        assert_eq!(rows[0][0].text, "in");
+        assert_eq!(rows[0].1.len(), 1);
+        assert_eq!(rows[0].1[0].text, "in");
     }
 }

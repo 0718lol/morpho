@@ -100,6 +100,26 @@ t pdf-split   sh -c "$BIN pdf split merged.pdf --out pages >/dev/null 2>&1 && [ 
 t pdf-encrypt "$BIN" pdf encrypt doc.pdf --out secret.pdf -p pw123
 t pdf-decrypt sh -c "$BIN pdf decrypt secret.pdf --out plain.pdf -p pw123 >/dev/null 2>&1 && $BIN convert plain.pdf --to txt --out out2 >/dev/null 2>&1 && grep -q Hello out2/plain.txt"
 
+# ---------- pdf tables (grid detection; needs libreoffice) ----------
+if [ -n "$SOFFICE" ]; then
+  echo "== pdf tables =="
+  printf '%s' '<html><body><table border=1 cellpadding=4><tr><th colspan=2>Sales (merged)</th><th>Notes</th></tr><tr><td>Q1</td><td>120</td><td>good</td></tr><tr><td>Q2</td><td>135</td><td>better</td></tr></table></body></html>' > merged.html
+  printf '%s' '<html><head><style>th{background-color:#d9d9d9}td{background-color:#f2f2f2}</style></head><body><table border=1 cellpadding=4><tr><th>Region</th><th>Q1</th><th>Q2</th></tr><tr><td>North</td><td>120</td><td>135</td></tr><tr><td>South</td><td>98</td><td>142</td></tr></table></body></html>' > shaded.html
+  printf '%s' '<html><body><table border=1 cellpadding=4><tr><td rowspan=2>Span</td><td>b1</td></tr><tr><td>b2</td></tr><tr><td>c1</td><td>c2</td></tr></table></body></html>' > vspan.html
+  "$SOFFICE" --headless --convert-to pdf merged.html shaded.html vspan.html >/dev/null 2>&1
+  $BIN convert merged.pdf --to docx --out out3 >/dev/null 2>&1
+  $BIN convert shaded.pdf --to docx --out out1 >/dev/null 2>&1
+  $BIN convert vspan.pdf --to docx --out out2 >/dev/null 2>&1
+  unzip -p out3/merged.docx word/document.xml > out3/doc.xml
+  unzip -p out1/shaded.docx word/document.xml > out1/doc.xml
+  unzip -p out2/vspan.docx word/document.xml > out2/doc.xml
+  t table-merged-header grep -qE 'gridSpan w:val=.2.' out3/doc.xml
+  t table-merged-content grep -q 'Sales (merged)' out3/doc.xml
+  t table-shaded-no-false-merge sh -c '! grep -qE gridSpan out1/doc.xml'
+  t table-shaded-content sh -c 'grep -q Region out1/doc.xml && grep -q 142 out1/doc.xml'
+  t table-rowspan-vmerge sh -c 'grep -qE vMerge out2/doc.xml && grep -q Span out2/doc.xml'
+fi
+
 # ---------- summary ----------
 echo
 echo "passed: $PASS  failed: $FAIL"

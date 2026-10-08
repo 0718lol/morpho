@@ -202,7 +202,9 @@ impl JobEngine {
                     let content = std::fs::read_to_string(&probe).unwrap_or_default();
                     let chars = content.chars().filter(|c| !c.is_whitespace()).count();
                     let pages = content.matches('\u{000C}').count().max(1);
-                    if chars < 16 * pages {
+                    // 8 chars/page: near-zero means scanned; the old 16/page misrouted
+                    // legitimate text pdfs with tiny content (small tables) to OCR
+                    if chars < 8 * pages {
                         plan.steps = match opts.target {
                             Format::Txt => vec![Step {
                                 pipeline: Pipeline::OcrText,

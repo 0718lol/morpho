@@ -42,8 +42,9 @@ pub enum Block {
     Para(Para),
     Image(ImagePara),
     Table { y: f32, rows: Vec<Vec<String>> },
-    /// Table with per-cell column spans from grid detection.
-    GridTable { y: f32, rows: Vec<Vec<(String, usize)>> },
+    /// Table with per-cell column spans and vertical-merge flags from grid
+    /// detection. Flag: 0 none, 1 restart, 2 continue.
+    GridTable { y: f32, rows: Vec<Vec<(String, usize, u8)>> },
 }
 
 #[derive(Debug, Default)]
@@ -364,7 +365,7 @@ fn reflow_page(
     body_size: f32,
     grid: Option<&super::grid::GridTable>,
 ) -> PageFlow {
-    let mut grid_tables: Vec<(f32, Vec<Vec<(String, usize)>>)> = Vec::new();
+    let mut grid_tables: Vec<(f32, Vec<Vec<(String, usize, u8)>>)> = Vec::new();
     let mut grid_chunks: Vec<super::parser::TextChunk> = Vec::new();
     if let Some(g) = grid {
         if g.ys.len() >= 2 && g.xs.len() >= 2 {
@@ -383,15 +384,67 @@ fn reflow_page(
             if !grid_chunks.is_empty() {
                 let rows = super::grid::slice_chunks(g, &grid_chunks);
                 if !rows.is_empty() {
-                    let tuple_rows: Vec<Vec<(String, usize)>> = rows
+                    let mut tuple_rows: Vec<(usize, Vec<(String, usize, u8)>)> = rows
                         .into_iter()
-                        .map(|row| {
-                            row.into_iter()
-                                .map(|cell| (cell.text, cell.span))
-                                .collect()
+                        .map(|(band, row)| {
+                            (
+                                band,
+                                row.into_iter()
+                                    .map(|cell| (cell.text, cell.span, 0u8))
+                                    .collect(),
+                            )
                         })
                         .collect();
-                    grid_tables.push((y_top, tuple_rows));
+                    // vertical continuation: the horizontal border between this
+                    // band and the one above is un-inked across the cell columns
+                    for ri in 1..tuple_rows.len() {
+                        let band = tuple_rows[ri].0;
+                        let mut col = 0usize;
+                        for cell in tuple_rows[ri].1.iter_mut() {
+                            let (text, span, vm) = cell;
+                            let c0 = col;
+                            let c1 = col + *span;
+                            col = c1;
+                            let borders_clear = (c0..c1).all(|ci| {
+                                g.hline_fill
+                                    .get(band)
+                                    .and_then(|v| v.get(ci).copied())
+                                    .unwrap_or(1.0)
+                                    < 0.5
+                            });
+                            if borders_clear {
+                                *vm = 2;
+                                *text = String::new();
+                            }
+                        }
+                    }
+                    // merge heads: a cell whose below neighbour continues
+                    for ri in 0..tuple_rows.len().saturating_sub(1) {
+                        let mut below: Vec<(usize, usize, u8)> = Vec::new();
+                        let mut col = 0usize;
+                        for (text, span, vm) in tuple_rows[ri + 1].1.iter() {
+                            let _ = text;
+                            below.push((col, col + *span, *vm));
+                            col += *span;
+                        }
+                        let mut col = 0usize;
+                        for cell in tuple_rows[ri].1.iter_mut() {
+                            let (_, span, vm) = cell;
+                            let c0 = col;
+                            let c1 = col + *span;
+                            col = c1;
+                            if *vm == 0
+                                && below
+                                    .iter()
+                                    .any(|(b0, b1, bvm)| *bvm == 2 && *b0 < c1 && c0 < *b1)
+                            {
+                                *vm = 1;
+                            }
+                        }
+                    }
+                    let flat: Vec<Vec<(String, usize, u8)>> =
+                        tuple_rows.into_iter().map(|(_, cells)| cells).collect();
+                    grid_tables.push((y_top, flat));
                 }
             }
         }
