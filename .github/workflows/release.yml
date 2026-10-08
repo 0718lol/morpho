@@ -17,6 +17,9 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bundles: "nsis"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: "app"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -37,6 +40,7 @@ jobs:
           python-version: "3.12"
 
       - name: Fetch conversion engines
+        if: runner.os == 'Windows'
         run: python scripts/fetch_engines.py
         env:
           # fetch_engines.py hits api.github.com for qpdf; unauthenticated
